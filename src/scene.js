@@ -4,6 +4,7 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { REGIONS, REGION_LOCATIONS, islandMean, isUpwind } from './data.js';
 import { getScale, bandOf, displayValue } from './scales.js';
 import { addWater, addNeighbors, addPlaceLabels, addLandmarks } from './landmarks.js';
+import { createRainLayer } from './rain.js';
 
 // Local equirectangular projection centred on Singapore; 1 scene unit = 1 km.
 const LAT0 = 1.3521;
@@ -365,22 +366,26 @@ export function createScene(container, geo, { context = null, getInsets = () => 
 
   function updateUpwind() {
     for (const f of fireItems) {
-      f.upwind = isUpwind(f.cluster, lastWind);
+      f.upwind = isUpwind(f.sector, lastWind);
       f.label.element.classList.toggle('upwind', f.upwind);
       f.smoke.visible = f.upwind;
     }
   }
 
+  const fmtKm = (km) => Math.round(km / 10) * 10;
+  const kmText = (s) => (s.maxKm - s.minKm < 40 ? `${fmtKm(s.distanceKm)} km` : `${fmtKm(s.minKm)}–${fmtKm(s.maxKm).toLocaleString('en-SG')} km`);
+
+  /** One flame per compass direction; size grows with the number of detections there. */
   function setHotspots(hotspots) {
     for (const f of fireItems) fires.remove(f.group, f.label, f.smoke);
-    fireItems = (hotspots?.clusters ?? []).map((cluster, i) => {
-      const b = (cluster.bearing * Math.PI) / 180;
+    fireItems = (hotspots?.sectors ?? []).map((sector, i) => {
+      const b = (sector.bearing * Math.PI) / 180;
       const ux = Math.sin(b);
       const uz = -Math.cos(b);
-      const r = fireRadius(ux, uz, cluster.distanceKm);
+      const r = fireRadius(ux, uz, sector.distanceKm);
       const x = ux * r;
       const z = uz * r;
-      const size = THREE.MathUtils.clamp(0.7 + Math.sqrt(cluster.count) / 6, 0.8, 2.6);
+      const size = THREE.MathUtils.clamp(0.8 + Math.sqrt(sector.count) / 14, 0.9, 3);
 
       const group = new THREE.Group();
       const outer = new THREE.Mesh(flameOuterGeo, flameOuterMat);
@@ -393,7 +398,7 @@ export function createScene(container, geo, { context = null, getInsets = () => 
 
       const el = document.createElement('div');
       el.className = 'fire-badge';
-      el.innerHTML = `<b>${cluster.count}</b><span class="fire-dist"> fires · ${Math.round(cluster.distanceKm)} km</span><span class="upwind-tag">upwind</span>`;
+      el.innerHTML = `<b>${sector.count.toLocaleString('en-SG')}</b><span class="fire-dist"> fires · ${sector.id} · ${kmText(sector)}</span><span class="upwind-tag">upwind</span><span class="rain-tag">rain</span>`;
       const label = new CSS2DObject(el);
       label.position.set(x, size * 1.7 + 0.8, z);
 
@@ -406,10 +411,40 @@ export function createScene(container, geo, { context = null, getInsets = () => 
       smoke.computeLineDistances();
 
       fires.add(group, label, smoke);
-      return { cluster, group, outer, inner, label, smoke, phase: i * 1.7, upwind: false };
+      return { sector, group, outer, inner, label, smoke, size, x, z, phase: i * 1.7, upwind: false };
     });
     updateUpwind();
+    applyRain();
     if (!userMoved) resetView();
+  }
+
+  // Rain clouds: over the island (NEA live or model) and over fire areas (model).
+  const rainLayer = createRainLayer({ scene, gradientMap, groundY: TOP });
+  let islandRain = [];
+  let fireRain = {};
+  const rainIntensity = (mmPerHour) => THREE.MathUtils.clamp(mmPerHour / 6, 0.12, 1);
+  function applyRain() {
+    const spots = islandRain.map((r) => {
+      const [x, y] = project(r.lon, r.lat);
+      return { x, y: TOP + 4.6, z: -y, size: 1.3 + r.intensity * 0.8, intensity: r.intensity };
+    });
+    for (const f of fireItems) {
+      const mm = fireRain[f.sector.id] ?? 0;
+      const raining = mm >= 0.5;
+      f.label.element.classList.toggle('raining', raining);
+      // Cloud just beyond the flame (away from Singapore), low enough to stay clear of the labels above.
+      if (raining) {
+        const out = (Math.hypot(f.x, f.z) + f.size * 0.9 + 2.4) / Math.hypot(f.x, f.z);
+        spots.push({ x: f.x * out, y: f.size * 0.9 + 1.4, z: f.z * out, size: 1.8, intensity: rainIntensity(mm / 3) });
+      }
+    }
+    rainLayer.set(spots);
+  }
+  /** island: [{ lon, lat, mmPerHour }]; fires: { sectorId: mm over the next 3 h }. */
+  function setRain({ island = [], fires: fireMm = {} } = {}) {
+    islandRain = island.map((r) => ({ ...r, intensity: r.mmPerHour > 0 ? rainIntensity(r.mmPerHour) : 0 }));
+    fireRain = fireMm;
+    applyRain();
   }
 
   // State that the animation loop eases toward
@@ -599,6 +634,7 @@ export function createScene(container, geo, { context = null, getInsets = () => 
     hazeGeo.attributes.color.needsUpdate = true;
 
     updateLandmarks(time);
+    rainLayer.update(dt, time);
 
     for (const f of fireItems) {
       const flick = Math.sin(time * 7 + f.phase) * 0.5 + Math.sin(time * 11.3 + f.phase * 2) * 0.5;
@@ -615,6 +651,7 @@ export function createScene(container, geo, { context = null, getInsets = () => 
   return {
     setValues,
     setHotspots,
+    setRain,
     resetView,
     /** Re-frame after the UI cards change size, unless the user has moved the camera. */
     refit: () => !userMoved && resetView(),

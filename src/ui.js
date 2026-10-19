@@ -1,4 +1,4 @@
-import { REGIONS, PSI_BANDS, bandFor, islandMax, isUpwind } from './data.js';
+import { REGIONS, REGION_LOCATIONS, PSI_BANDS, bandFor, islandMax, isUpwind } from './data.js';
 import { getScale, bandOf, displayValue } from './scales.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -69,8 +69,8 @@ export function renderPanel(data, index) {
   }
 }
 
-/** Fire summary; upwind status follows the wind at the selected hour. */
-export function renderFires(hotspots, wind) {
+/** Fire summary; upwind and rain status follow the selected hour. */
+export function renderFires(hotspots, wind, fireMm = {}) {
   const box = $('fires');
   box.hidden = !hotspots;
   if (!hotspots) return;
@@ -79,13 +79,89 @@ export function renderFires(hotspots, wind) {
     $('fires-note').textContent = 'NASA FIRMS VIIRS, Sumatra to Borneo';
     return;
   }
-  const upwind = hotspots.clusters.filter((c) => isUpwind(c, wind)).length;
-  $('fires-text').textContent = `${hotspots.total.toLocaleString('en-SG')} detections`;
-  const status = upwind
-    ? `<span class="upwind-count">${upwind} cluster${upwind > 1 ? 's' : ''} upwind</span> — smoke may drift here`
-    : 'No clusters upwind at this hour';
+  const n = (v) => v.toLocaleString('en-SG');
+  const up = hotspots.sectors.filter((s) => isUpwind(s, wind));
+  const upCount = up.reduce((a, s) => a + s.count, 0);
+  const wet = hotspots.sectors.filter((s) => (fireMm[s.id] ?? 0) >= 0.5);
+  $('fires-text').textContent = `${n(hotspots.total)} detections`;
+  const lines = [
+    up.length
+      ? `<span class="upwind-count">${n(upCount)} upwind (${up.map((s) => s.id).join(', ')})</span> — smoke may drift here`
+      : 'None upwind at this hour',
+  ];
+  if (wet.length) lines.push(`<span class="rain-count">Rain over ${wet.map((s) => s.id).join(', ')} fires</span> in the next 3 h`);
   const latest = hotspots.latest ? ` · latest ${formatHour(hotspots.latest)}` : '';
-  $('fires-note').innerHTML = `${status}<br>NASA FIRMS VIIRS${latest} · map distance compressed`;
+  lines.push(`NASA FIRMS VIIRS${latest} · map distance compressed`);
+  $('fires-note').innerHTML = lines.join('<br>');
+}
+
+const RAIN_SPACING_DEG = 0.045; // ~5 km between clouds
+const CLOUD_OFFSETS = [[-0.04, 0.022], [0.04, 0.018], [0.004, -0.034]]; // degrees around a region point
+const MAX_ISLAND_CLOUDS = 14;
+
+/** Drop rain spots that crowd an earlier (stronger) one. */
+function spaced(spots) {
+  const out = [];
+  for (const s of spots) {
+    if (out.length >= MAX_ISLAND_CLOUDS) break;
+    if (out.every((o) => Math.hypot(o.lon - s.lon, o.lat - s.lat) >= RAIN_SPACING_DEG)) out.push(s);
+  }
+  return out;
+}
+
+const mostCommon = (list) => {
+  const counts = new Map();
+  for (const v of list) counts.set(v, (counts.get(v) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
+};
+
+/**
+ * Rain for the selected hour, as map spots plus panel text. "Now" uses NEA's live gauges
+ * and 2-hour forecast; other hours use the Open-Meteo model at the five region points.
+ */
+export function rainSummary(data, index, nea) {
+  const h = data.timeline[index];
+  if (index === data.nowIndex && (nea?.stations || nea?.forecast)) {
+    const wet = (nea.stations?.list ?? []).filter((s) => s.mm > 0).sort((a, b) => b.mm - a.mm);
+    const rainy = (nea.forecast?.areas ?? []).filter((a) => a.rainy && a.lat != null);
+    const island = spaced([
+      ...wet.map((s) => ({ lon: s.lon, lat: s.lat, mmPerHour: s.mm * 12 })), // 5-min total → hourly rate
+      ...rainy.map((a) => ({ lon: a.lon, lat: a.lat, mmPerHour: /heavy/i.test(a.text) ? 6 : /thunder/i.test(a.text) ? 3 : 1 })),
+    ]);
+    const live = nea.stations
+      ? wet.length
+        ? `Raining at ${wet.length} NEA gauge${wet.length > 1 ? 's' : ''}, up to ${wet[0].mm} mm in 5 min`
+        : 'Dry at all NEA rain gauges'
+      : 'Live gauges unavailable';
+    const when = nea.forecast?.validText ? ` (${nea.forecast.validText})` : '';
+    const next = nea.forecast
+      ? rainy.length
+        ? `Next 2 h${when}: ${mostCommon(rainy.map((a) => a.text))} in ${rainy.slice(0, 2).map((a) => a.name).join(', ')}${rainy.length > 2 ? ` +${rainy.length - 2} more` : ''}`
+        : `Next 2 h${when}: no rain forecast`
+      : '';
+    return { island, text: live, note: next };
+  }
+  const rain = h?.rain ?? {};
+  const wettest = REGIONS.reduce((a, r) => ((rain[r] ?? 0) > (rain[a] ?? 0) ? r : a), REGIONS[0]);
+  const max = rain[wettest] ?? 0;
+  // A few clouds around each rainy region point, not on it: the region badge sits there.
+  const island = REGIONS.filter((r) => (rain[r] ?? 0) >= 0.1).flatMap((r) =>
+    CLOUD_OFFSETS.map(([dLon, dLat]) => ({
+      lon: REGION_LOCATIONS[r].lon + dLon,
+      lat: REGION_LOCATIONS[r].lat + dLat,
+      mmPerHour: rain[r],
+    })),
+  );
+  return {
+    island,
+    text: max >= 0.1 ? `${max.toFixed(1)} mm in the hour, most in the ${wettest}` : 'No rain modelled for this hour',
+    note: 'Open-Meteo model',
+  };
+}
+
+export function renderRain(summary) {
+  $('rain-text').textContent = summary.text;
+  $('rain-note').textContent = summary.note;
 }
 
 export function renderPsi(data) {
@@ -110,12 +186,16 @@ export function renderChart(data, index) {
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.replaceChildren();
 
-  const pad = { l: 30, r: 10, t: 14, b: 18 };
+  const pad = { l: 30, r: 10, t: 14, b: 32 };
   const tl = data.timeline;
   const scale = getScale();
   const raw = tl.map((h) => islandMax(h.pm25)); // µg/m³
   const vals = raw.map((v) => scale.convert(v)); // display units
   const yMax = Math.max(scale.chartFloor, Math.ceil(Math.max(...vals) * 1.15));
+  const rainVals = tl.map((h) => {
+    const v = REGIONS.map((r) => h.rain?.[r]).filter((r) => r != null);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+  });
   const x = (i) => pad.l + (i / Math.max(1, tl.length - 1)) * (width - pad.l - pad.r);
   const y = (v) => pad.t + (1 - v / yMax) * (height - pad.t - pad.b);
 
@@ -139,6 +219,19 @@ export function renderChart(data, index) {
       el('line', { x1: x(i), x2: x(i), y1: pad.t, y2: height - pad.b, class: 'grid' }, svg);
       el('text', { x: x(i) + 3, y: height - 4, class: 'axis-label' }, svg).textContent = fmtDay.format(h.t * 1000);
     }
+  });
+
+  // Rain strip: island-mean modelled rain per hour, on its own small scale under the plot.
+  const stripTop = height - pad.b + 3;
+  const stripH = 10;
+  const rainMax = Math.max(2, ...rainVals);
+  const barW = Math.max(1, ((width - pad.l - pad.r) / tl.length) * 0.8);
+  el('line', { x1: pad.l, x2: width - pad.r, y1: stripTop + stripH, y2: stripTop + stripH, class: 'grid' }, svg);
+  el('text', { x: pad.l - 5, y: stripTop + stripH, 'text-anchor': 'end', class: 'rain-label' }, svg).textContent = 'rain';
+  rainVals.forEach((v, i) => {
+    if (v < 0.05) return;
+    const bh = Math.max(1.5, (v / rainMax) * stripH);
+    el('rect', { x: x(i) - barW / 2, y: stripTop + stripH - bh, width: barW, height: bh, rx: 1, class: 'rain-bar' }, svg);
   });
 
   const path = (from, to) =>
@@ -166,5 +259,6 @@ export function renderChart(data, index) {
     },
     xOf: x,
     pm25: (i) => raw[i],
+    rain: (i) => rainVals[i],
   };
 }

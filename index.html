@@ -47,6 +47,18 @@
           <div id="wind-text" class="value">–</div>
         </div>
       </div>
+      <div class="rain">
+        <svg viewBox="0 0 64 64" class="rain-icon" aria-hidden="true">
+          <path d="M18 40a10 10 0 0 1 1-20 14 14 0 0 1 26-3 11 11 0 0 1 2 23Z" fill="#eef2f5" stroke="#3a2e2a" stroke-width="3" stroke-linejoin="round"/>
+          <path d="M24 46l-3 8M34 46l-3 8M44 46l-3 8" stroke="#2f8fd8" stroke-width="3.5" stroke-linecap="round"/>
+        </svg>
+        <div>
+          <div class="label">Rain</div>
+          <div id="rain-text" class="value">–</div>
+          <div id="rain-note" class="note"></div>
+          <div class="note muted-note">Rain can wash some haze out. Shown for context; PM2.5 values are not adjusted.</div>
+        </div>
+      </div>
       <div class="fires" id="fires" hidden>
         <svg viewBox="0 0 64 64" class="fires-icon" aria-hidden="true">
           <path d="M32 6c4 10 14 16 14 30a14 14 0 0 1-28 0c0-8 4-12 6-16 1 6 4 8 6 8-2-8 0-16 2-22Z" fill="#ff7a2f" stroke="#3a2e2a" stroke-width="3" stroke-linejoin="round"/>
@@ -80,7 +92,7 @@
         <a href="https://open-meteo.com/en/docs/air-quality-api" target="_blank" rel="noopener">Open-Meteo / CAMS</a> ·
         boundaries: URA Master Plan 2019 ·
         water © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> ·
-        coastlines: Natural Earth. US AQI uses the EPA PM2.5 formula (as aqicn.org).
+        coastlines: Natural Earth · rain: NEA gauges &amp; 2-hr forecast, Open-Meteo. US AQI uses the EPA PM2.5 formula (as aqicn.org).
         <span class="disclaimer">Forecast is a ~40 km model nudged toward the latest reading — island-wide trend, not street-level.</span>
       </p>
     </section>

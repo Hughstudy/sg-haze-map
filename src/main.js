@@ -1,8 +1,8 @@
 import './style.css';
 import { createScene } from './scene.js';
-import { loadHazeData, loadHotspots } from './data.js';
+import { loadHazeData, loadHotspots, loadNeaRain, loadFireRain, rainWindow } from './data.js';
 import { setScale, bandOf, formatValue } from './scales.js';
-import { renderLegend, renderPanel, renderPsi, renderFires, renderChart, formatHour, formatClock } from './ui.js';
+import { renderLegend, renderPanel, renderPsi, renderFires, renderChart, rainSummary, renderRain, formatHour, formatClock } from './ui.js';
 
 const REFRESH_MS = 10 * 60 * 1000;
 const PLAY_STEP_MS = 350;
@@ -17,6 +17,8 @@ const tooltip = $('tooltip');
 
 let data = null;
 let hotspots = null;
+let neaRain = null; // { stations, forecast } from NEA
+let fireRain = null; // Map<sectorId, Map<t, mm>> from Open-Meteo
 let index = 0;
 let chart = null;
 let scene = null;
@@ -35,7 +37,12 @@ function select(i) {
   const h = data.timeline[index];
   scene.setValues(h.pm25, h.wind);
   renderPanel(data, index);
-  renderFires(hotspots, h.wind);
+  // Rain is context only: clouds and text, never an adjustment to the PM2.5 values.
+  const rain = rainSummary(data, index, neaRain);
+  const fireMm = Object.fromEntries((hotspots?.sectors ?? []).map((s) => [s.id, rainWindow(fireRain?.get(s.id), h.t, 3) ?? 0]));
+  scene.setRain({ island: rain.island, fires: fireMm });
+  renderRain(rain);
+  renderFires(hotspots, h.wind, fireMm);
   chart = renderChart(data, index);
 }
 
@@ -45,14 +52,22 @@ function showChartTip(i) {
   const v = chart.pm25(i);
   tip.hidden = false;
   tip.style.left = `${chart.xOf(i)}px`;
-  tip.textContent = `${formatHour(h.t)} · ${formatValue(v)} · ${bandOf(v).label}${h.kind === 'forecast' ? ' (forecast)' : ''}`;
+  const rain = chart.rain(i);
+  const rainText = rain >= 0.1 ? ` · rain ${rain.toFixed(1)} mm` : '';
+  tip.textContent = `${formatHour(h.t)} · ${formatValue(v)} · ${bandOf(v).label}${h.kind === 'forecast' ? ' (forecast)' : ''}${rainText}`;
 }
 
 async function refresh() {
   try {
-    const [next, nextHotspots] = await Promise.all([loadHazeData(), loadHotspots()]);
+    const [next, nextHotspots, nextNeaRain] = await Promise.all([
+      loadHazeData(),
+      loadHotspots(),
+      loadNeaRain().catch(() => null),
+    ]);
     if (nextHotspots?.generatedAt !== hotspots?.generatedAt) scene.setHotspots(nextHotspots);
     hotspots = nextHotspots;
+    neaRain = nextNeaRain;
+    fireRain = (await loadFireRain(hotspots?.sectors)) ?? fireRain;
     const prev = data;
     const followNow = !prev || index === prev.nowIndex;
     const prevT = prev?.timeline[index]?.t;

@@ -8,7 +8,8 @@ A cartoon 3D map of Singapore showing live PM2.5 haze readings and a 4-day forec
 - **Past 24 h:** observed hourly PM2.5, drawn as a solid line on the timeline.
 - **Forecast:** Open-Meteo's air-quality API (the CAMS global model), up to about 4 days, drawn dashed. Forecast values start at the latest NEA reading and blend into the raw model over about 12 h, so the map doesn't jump at "now".
 - **Wind:** the Open-Meteo 10 m wind drives the drifting haze particles and the compass.
-- **Fire hotspots (optional):** NASA FIRMS VIIRS detections from Sumatra to Borneo over the last 24 h, grouped into clusters and drawn as cartoon flames on the sea. A cluster is marked **upwind** when the wind at the selected hour blows from its direction toward Singapore. Each marker points in the true direction, but distances are log-compressed so 100–800 km fits just beyond the coast.
+- **Fire hotspots (optional):** NASA FIRMS VIIRS detections from Sumatra to Borneo over the last 24 h, grouped into one cartoon flame per compass direction (N, NE, … NW) with its fire count and distance range. A direction is marked **upwind** when the wind at the selected hour blows from it toward Singapore. Each marker points in the true direction, but distances are log-compressed so 100–1,000+ km fits just beyond the coast.
+- **Rain (context only):** for "now", NEA's live 5-minute rain gauges and 2-hour area forecast; for other hours, Open-Meteo's modelled rain at the five region points. Rain shows as cartoon clouds over the island, a rain strip under the timeline, and a **rain** tag (plus cloud) on fire markers when the model expects ≥0.5 mm over that fire area in the next 3 h. Rain never adjusts the PM2.5 values; the CAMS forecast already models rain washing out haze.
 - **Map:** the 55 URA planning areas as extruded toon tiles. Each area takes the colour of the NEA region whose label point is nearest its centroid. Real reservoirs and Marina Bay are cut in as water, the Johor and Batam coasts frame the view, and cartoon landmarks mark familiar places: Marina Bay Sands, the Singapore Flyer, Gardens by the Bay, the Changi runways and Jewel, the Jurong Island tanks and the Causeway.
 - **Scale switch:** US EPA AQI (default), which matches aqicn.org (for example 73 µg/m³ → 160), or NEA's own µg/m³ bands. Add `?scale=nea` to link straight to the NEA view.
 
@@ -16,6 +17,7 @@ The PM2.5 colour bands follow NEA's 1-hr bands: Normal 0–55, Elevated 56–150
 
 ### Limitations
 
+- Rain over fires is looked up at each direction's biggest fire cluster, so it describes that area, not every fire in the direction.
 - The forecast model works in cells about 40 km wide. It shows an island-wide trend, not a different prediction for each street or region.
 - NEA publishes 5 regional values. The 55 planning areas show those values; they are not individual measurements.
 

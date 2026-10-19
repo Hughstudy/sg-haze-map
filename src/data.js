@@ -80,23 +80,28 @@ async function fetchModel() {
   const common = `timeformat=unixtime&past_days=1&forecast_days=${FORECAST_DAYS}`;
   const [aq, wx] = await Promise.all([
     getJson(`${AQ}?latitude=${lats}&longitude=${lons}&hourly=pm2_5&${common}`),
-    getJson(`${WX}?latitude=1.35735&longitude=103.82&hourly=wind_speed_10m,wind_direction_10m&${common}`),
+    getJson(`${WX}?latitude=${lats}&longitude=${lons}&hourly=wind_speed_10m,wind_direction_10m,precipitation&${common}`),
   ]);
   const series = Array.isArray(aq) ? aq : [aq];
   const pm25 = new Map(); // t -> {region: value}
   series[0].hourly.time.forEach((t, i) => {
     pm25.set(t, Object.fromEntries(REGIONS.map((r, k) => [r, series[k]?.hourly.pm2_5[i] ?? null])));
   });
+  // Wind from the central point; modelled rain (mm in the hour) at each region point.
+  const wxSeries = Array.isArray(wx) ? wx : [wx];
+  const centre = wxSeries[REGIONS.indexOf('central')] ?? wxSeries[0];
   const wind = new Map();
-  wx.hourly.time.forEach((t, i) => {
-    wind.set(t, { speed: wx.hourly.wind_speed_10m[i], dir: wx.hourly.wind_direction_10m[i] });
+  const rain = new Map();
+  centre.hourly.time.forEach((t, i) => {
+    wind.set(t, { speed: centre.hourly.wind_speed_10m[i], dir: centre.hourly.wind_direction_10m[i] });
+    rain.set(t, Object.fromEntries(REGIONS.map((r, k) => [r, wxSeries[k]?.hourly.precipitation[i] ?? null])));
   });
-  return { pm25, wind };
+  return { pm25, wind, rain };
 }
 
-const nearestWind = (wind, t) => {
+const nearestHour = (map, t) => {
   const h = Math.round(t / HOUR) * HOUR;
-  return wind.get(h) ?? wind.get(h - HOUR) ?? wind.get(h + HOUR) ?? null;
+  return map.get(h) ?? map.get(h - HOUR) ?? map.get(h + HOUR) ?? null;
 };
 
 /**
@@ -113,7 +118,13 @@ export async function loadHazeData() {
 
   const timeline = [];
   for (const h of obs?.hours ?? []) {
-    timeline.push({ t: h.t, kind: 'observed', pm25: h.pm25, wind: model ? nearestWind(model.wind, h.t) : null });
+    timeline.push({
+      t: h.t,
+      kind: 'observed',
+      pm25: h.pm25,
+      wind: model ? nearestHour(model.wind, h.t) : null,
+      rain: model ? nearestHour(model.rain, h.t) : null,
+    });
   }
 
   const latest = timeline.at(-1);
@@ -133,7 +144,7 @@ export async function loadHazeData() {
       for (const r of REGIONS) {
         pm25[r] = values[r] == null ? null : Math.max(0, Math.round(values[r] + bias[r] * w));
       }
-      timeline.push({ t, kind: 'forecast', pm25, wind: model.wind.get(t) ?? null });
+      timeline.push({ t, kind: 'forecast', pm25, wind: model.wind.get(t) ?? null, rain: model.rain.get(t) ?? null });
     }
   }
 
@@ -159,7 +170,7 @@ const SG = { lat: 1.3521, lon: 103.8198 };
 const STALE_AFTER_S = 48 * HOUR;
 const CLUSTER_DEG = 0.8; // detections within this many degrees of a cluster centre join it
 const MIN_CLUSTER = 3;
-const MAX_CLUSTERS = 10;
+const SECTOR_NAMES = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const UPWIND_DEG = 45;
 
 const toRad = (d) => (d * Math.PI) / 180;
@@ -175,6 +186,40 @@ function bearingFromSg(lat, lon) {
   const y = Math.sin(toRad(lon - SG.lon)) * Math.cos(toRad(lat));
   const x = Math.cos(toRad(SG.lat)) * Math.sin(toRad(lat)) - Math.sin(toRad(SG.lat)) * Math.cos(toRad(lat)) * Math.cos(toRad(lon - SG.lon));
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/**
+ * One marker per compass direction (45° sectors). Fire seasons often put thousands of
+ * detections in the same direction, and separate markers there just pile on top of each other.
+ */
+function toSectors(clusters) {
+  const bySector = new Map();
+  for (const c of clusters) {
+    const id = SECTOR_NAMES[Math.round(c.bearing / 45) % 8];
+    const s = bySector.get(id) ?? { id, count: 0, sx: 0, sy: 0, km: 0, minKm: Infinity, maxKm: 0, main: c };
+    s.count += c.count;
+    // count-weighted circular mean of bearings
+    s.sx += Math.sin(toRad(c.bearing)) * c.count;
+    s.sy += Math.cos(toRad(c.bearing)) * c.count;
+    s.km += c.distanceKm * c.count;
+    s.minKm = Math.min(s.minKm, c.distanceKm);
+    s.maxKm = Math.max(s.maxKm, c.distanceKm);
+    if (c.count > s.main.count) s.main = c;
+    bySector.set(id, s);
+  }
+  return [...bySector.values()]
+    .map((s) => ({
+      id: s.id,
+      count: s.count,
+      bearing: ((Math.atan2(s.sx, s.sy) * 180) / Math.PI + 360) % 360,
+      distanceKm: s.km / s.count,
+      minKm: s.minKm,
+      maxKm: s.maxKm,
+      // the biggest cluster stands in for the sector when looking up rain over the fires
+      lat: s.main.lat,
+      lon: s.main.lon,
+    }))
+    .sort((a, b) => b.count - a.count);
 }
 
 /** A cluster is upwind when the wind blows from roughly its direction toward Singapore. */
@@ -216,16 +261,76 @@ export async function loadHotspots() {
         const lon = c.lon / c.n;
         return { count: c.n, frp: c.frp, lat, lon, distanceKm: distanceKm(lat, lon), bearing: bearingFromSg(lat, lon) };
       })
-      .sort((a, b) => b.count - a.count)
-      .slice(0, MAX_CLUSTERS);
+      .sort((a, b) => b.count - a.count);
 
     return {
       generatedAt: file.generatedAt,
       latest: recent.reduce((m, p) => Math.max(m, p[3]), 0) || null,
       total: recent.length,
-      clusters,
+      sectors: toSectors(clusters),
     };
   } catch {
     return null;
   }
+}
+
+// ---- Rain (context only: it never changes the PM2.5 values) ----
+
+const RAINY = /rain|shower|thunder|drizzle/i;
+
+/**
+ * NEA live rain: 5-minute totals at ~90 gauges, plus the 2-hour area forecast.
+ * Either half may be null if its request fails.
+ */
+export async function loadNeaRain() {
+  const [gauges, nowcast] = await Promise.allSettled([getJson(`${NEA}/rainfall`), getJson(`${NEA}/two-hr-forecast`)]);
+  let stations = null;
+  if (gauges.status === 'fulfilled' && gauges.value.code === 0) {
+    const d = gauges.value.data;
+    const reading = d.readings[0];
+    const byId = new Map(reading.data.map((r) => [r.stationId, r.value]));
+    stations = {
+      time: Date.parse(reading.timestamp) / 1000,
+      list: d.stations.map((s) => ({ name: s.name, lat: s.location.latitude, lon: s.location.longitude, mm: byId.get(s.id) ?? 0 })),
+    };
+  }
+  let forecast = null;
+  if (nowcast.status === 'fulfilled' && nowcast.value.code === 0) {
+    const d = nowcast.value.data;
+    const item = d.items[0];
+    const where = new Map(d.area_metadata.map((a) => [a.name, a.label_location]));
+    forecast = {
+      validText: item.valid_period?.text ?? '',
+      areas: item.forecasts.map((f) => ({
+        name: f.area,
+        text: f.forecast,
+        rainy: RAINY.test(f.forecast),
+        lat: where.get(f.area)?.latitude,
+        lon: where.get(f.area)?.longitude,
+      })),
+    };
+  }
+  return { stations, forecast };
+}
+
+/** Modelled hourly rain (mm) at each fire sector's main cluster: Map<sectorId, Map<t, mm>>. */
+export async function loadFireRain(sectors) {
+  if (!sectors?.length) return null;
+  try {
+    const lats = sectors.map((s) => s.lat.toFixed(3)).join(',');
+    const lons = sectors.map((s) => s.lon.toFixed(3)).join(',');
+    const body = await getJson(`${WX}?latitude=${lats}&longitude=${lons}&hourly=precipitation&timeformat=unixtime&past_days=1&forecast_days=${FORECAST_DAYS}`);
+    const series = Array.isArray(body) ? body : [body];
+    return new Map(sectors.map((s, k) => [s.id, new Map(series[k].hourly.time.map((t, i) => [t, series[k].hourly.precipitation[i] ?? 0]))]));
+  } catch {
+    return null;
+  }
+}
+
+/** Rain total over `hours` starting at t from a Map<t, mm>. */
+export function rainWindow(series, t, hours = 3) {
+  if (!series) return null;
+  let sum = 0;
+  for (let h = 0; h < hours; h++) sum += series.get(Math.round(t / HOUR) * HOUR + h * HOUR) ?? 0;
+  return sum;
 }

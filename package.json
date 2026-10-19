@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "geo": "node scripts/prepare-geo.mjs",
-    "hotspots": "node scripts/fetch-hotspots.mjs"
+    "hotspots": "node scripts/fetch-hotspots.mjs",
+    "context": "node scripts/prepare-context.mjs"
   },
   "devDependencies": {
     "vite": "^8.3.4"

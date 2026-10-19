@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { REGIONS, REGION_LOCATIONS, islandMean, isUpwind } from './data.js';
 import { getScale, bandOf, displayValue } from './scales.js';
+import { addWater, addNeighbors, addPlaceLabels, addLandmarks } from './landmarks.js';
 
 // Local equirectangular projection centred on Singapore; 1 scene unit = 1 km.
 const LAT0 = 1.3521;
@@ -106,7 +107,7 @@ function rng(seed) {
   };
 }
 
-export function createScene(container, geo, { getInsets = () => ({ top: 0, right: 0, bottom: 0, left: 0 }) } = {}) {
+export function createScene(container, geo, { context = null, getInsets = () => ({ top: 0, right: 0, bottom: 0, left: 0 }) } = {}) {
   const isSmall = Math.min(window.innerWidth, window.innerHeight) < 700;
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -123,7 +124,8 @@ export function createScene(container, geo, { getInsets = () => ({ top: 0, right
   scene.background = COLORS.sky.clone();
   scene.fog = new THREE.Fog(COLORS.sky.clone(), 70, 240);
 
-  const camera = new THREE.PerspectiveCamera(35, 1, 0.5, 1000);
+  // Near plane at 2: the camera never gets closer than controls.minDistance, and it buys depth precision.
+  const camera = new THREE.PerspectiveCamera(35, 1, 2, 1000);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
@@ -146,6 +148,16 @@ export function createScene(container, geo, { getInsets = () => ({ top: 0, right
 
   // Sea
   const seaMat = new THREE.MeshToonMaterial({ color: COLORS.sea.clone(), gradientMap });
+  // Inland water is a deeper blue than the sea so reservoirs read from the overview zoom.
+  // polygonOffset keeps the thin decal from z-fighting with the tile top at overview distances.
+  const waterMat = new THREE.MeshToonMaterial({
+    color: COLORS.sea.clone(),
+    gradientMap,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -4,
+  });
   const sea = new THREE.Mesh(new THREE.CircleGeometry(400, 64), seaMat);
   sea.rotation.x = -Math.PI / 2;
   sea.position.y = -0.05;
@@ -207,8 +219,15 @@ export function createScene(container, geo, { getInsets = () => ({ top: 0, right
   });
 
   const bbox = new THREE.Box3().setFromObject(island);
+  const areaAt = (x, y) => areas.find((a) => pointInArea(x, y, a)) ?? null;
 
-  // Scenery: trees, housing blocks, CBD towers, Marina Bay Sands
+  // Real geography around and inside the island: Johor/Riau coasts, reservoirs, Marina Bay
+  addNeighbors({ scene, context, project, gradientMap });
+  const waterRings = addWater({ context, project, top: TOP, areas, areaAt, waterMat });
+  const inWater = (x, y) => waterRings.some((r) => pointInRing(x, y, r));
+  addPlaceLabels({ scene, project, top: TOP });
+
+  // Scenery: trees, housing blocks, CBD towers, landmarks
   const rand = rng(42);
   const randomPointIn = (area, tries = 40) => {
     const xs = area.rings.flat(2);
@@ -217,10 +236,11 @@ export function createScene(container, geo, { getInsets = () => ({ top: 0, right
     for (let i = 0; i < tries; i++) {
       const x = minX + rand() * (maxX - minX);
       const y = minY + rand() * (maxY - minY);
-      if (pointInArea(x, y, area)) return [x, y];
+      if (pointInArea(x, y, area) && !inWater(x, y)) return [x, y];
     }
     return null;
   };
+  for (const area of areas) area.randomPoint = () => randomPointIn(area);
 
   const treeSpots = [];
   const blockSpots = [];
@@ -273,23 +293,15 @@ export function createScene(container, geo, { getInsets = () => ({ top: 0, right
   place(towers, towerSpots, () => { const w = 0.16 + rand() * 0.12; return { sx: w, sy: 0.7 + rand() * 1.6, sz: w }; });
   towerSpots.forEach((_, i) => towers.setColorAt(i, glass[i % glass.length]));
 
-  const mbs = new THREE.Group();
-  const mbsMat = new THREE.MeshToonMaterial({ color: '#eceff1', gradientMap });
-  for (let i = -1; i <= 1; i++) {
-    const t = new THREE.Mesh(boxGeo, mbsMat);
-    t.scale.set(0.12, 1.1, 0.3);
-    t.position.x = i * 0.2;
-    t.castShadow = true;
-    mbs.add(t);
-  }
-  const skypark = new THREE.Mesh(boxGeo, new THREE.MeshToonMaterial({ color: '#90a4ae', gradientMap }));
-  skypark.scale.set(0.85, 0.07, 0.14);
-  skypark.position.set(0.05, 1.1, 0);
-  mbs.add(skypark);
-  const [mx, my] = project(103.8607, 1.2834);
-  mbs.position.set(mx, TOP, -my);
-  mbs.rotation.y = 0.35;
-  scene.add(mbs);
+  const updateLandmarks = addLandmarks({
+    scene,
+    project,
+    top: TOP,
+    gradientMap,
+    areas,
+    onLand: (x, y) => areaAt(x, y) !== null,
+    rand,
+  });
 
   // Region badges
   const regionLabels = {};
@@ -463,7 +475,8 @@ export function createScene(container, geo, { getInsets = () => ({ top: 0, right
   let framed = false;
   let userMoved = false;
   controls.addEventListener('start', () => (userMoved = true));
-  const VIEW_DIR = new THREE.Vector3(0, 0.68, 0.74).normalize();
+  // Fairly top-down so the island's familiar outline reads like a map, with enough tilt for 3D.
+  const VIEW_DIR = new THREE.Vector3(0, 0.84, 0.54).normalize();
   const islandCorners = [];
   for (const x of [bbox.min.x, bbox.max.x]) for (const z of [bbox.min.z, bbox.max.z]) islandCorners.push(new THREE.Vector3(x, TOP, z));
   const ndc = new THREE.Vector3();
@@ -557,6 +570,7 @@ export function createScene(container, geo, { getInsets = () => ({ top: 0, right
     scene.fog.near += (camDist * THREE.MathUtils.lerp(1.1, 0.45, h) - scene.fog.near) * ease;
     scene.fog.far += (camDist * THREE.MathUtils.lerp(3.5, 1.9, h) - scene.fog.far) * ease;
     seaMat.color.lerp(tmpColor.copy(COLORS.sea).lerp(COLORS.seaHazy, h), ease);
+    waterMat.color.copy(seaMat.color).multiplyScalar(0.8);
 
     // Particles: advect with wind, wobble a little, wrap around the box
     const W = B.x1 - B.x0;
@@ -583,6 +597,8 @@ export function createScene(container, geo, { getInsets = () => ({ top: 0, right
     }
     hazeGeo.attributes.position.needsUpdate = true;
     hazeGeo.attributes.color.needsUpdate = true;
+
+    updateLandmarks(time);
 
     for (const f of fireItems) {
       const flick = Math.sin(time * 7 + f.phase) * 0.5 + Math.sin(time * 11.3 + f.phase * 2) * 0.5;

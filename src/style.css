@@ -288,6 +288,22 @@ h1, .hero-num, .kind, .btn, .region-badge {
 .region-badge .name { text-transform: capitalize; color: var(--ink-2); }
 .region-badge .val { font-weight: 700; font-variant-numeric: tabular-nums; }
 
+/* Place names on the map */
+.place-label {
+  font: 600 11.5px 'Fredoka', 'Nunito', sans-serif;
+  color: var(--ink);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 6px #fff;
+  opacity: 0.85;
+}
+.place-label.country {
+  font-size: 12.5px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #5d6b4e;
+}
+
 /* Fire cluster badges over the sea */
 .fire-badge {
   display: inline-flex;
@@ -336,6 +352,8 @@ h1, .hero-num, .kind, .btn, .region-badge {
   .wind, .psi, .fires { display: none; }
   .fire-badge { font-size: 10.5px; padding: 1px 6px; }
   .fire-badge .fire-dist { display: none; }
+  .place-label { font-size: 10px; }
+  .place-label.country { font-size: 10.5px; letter-spacing: 1px; }
   .legend { margin-left: 0; gap: 8px; font-size: 11.5px; }
   .legend small { display: none; }
   .chart-wrap { height: 80px; }

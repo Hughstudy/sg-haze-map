@@ -9,7 +9,8 @@ A cartoon 3D map of Singapore showing live PM2.5 haze readings and a 4-day forec
 - **Forecast:** Open-Meteo's air-quality API (the CAMS global model), up to about 4 days, drawn dashed. Forecast values start at the latest NEA reading and blend into the raw model over about 12 h, so the map doesn't jump at "now".
 - **Wind:** the Open-Meteo 10 m wind drives the drifting haze particles and the compass.
 - **Fire hotspots (optional):** NASA FIRMS VIIRS detections from Sumatra to Borneo over the last 24 h, grouped into clusters and drawn as cartoon flames on the sea. A cluster is marked **upwind** when the wind at the selected hour blows from its direction toward Singapore. Each marker points in the true direction, but distances are log-compressed so 100–800 km fits just beyond the coast.
-- **Map:** the 55 URA planning areas as extruded toon tiles. Each area takes the colour of the NEA region whose label point is nearest its centroid.
+- **Map:** the 55 URA planning areas as extruded toon tiles. Each area takes the colour of the NEA region whose label point is nearest its centroid. Real reservoirs and Marina Bay are cut in as water, the Johor and Batam coasts frame the view, and cartoon landmarks mark familiar places: Marina Bay Sands, the Singapore Flyer, Gardens by the Bay, the Changi runways and Jewel, the Jurong Island tanks and the Causeway.
+- **Scale switch:** NEA µg/m³ bands (default) or US EPA AQI, which matches aqicn.org (for example 73 µg/m³ → 160). Add `?scale=us` to link straight to the US view.
 
 The PM2.5 colour bands follow NEA's 1-hr bands: Normal 0–55, Elevated 56–150, High 151–250, Very high 251+.
 
@@ -29,6 +30,12 @@ npm run dev
 
 ```bash
 npm run geo
+```
+
+`public/data/context.json` holds the geography that makes the map recognisable: reservoirs and Marina Bay (OpenStreetMap, via Overpass) and the southern Johor and Riau Islands coastlines (Natural Earth 1:10m). It's committed too. To regenerate it:
+
+```bash
+npm run context
 ```
 
 ## Fire hotspots (NASA FIRMS)
@@ -63,3 +70,5 @@ npm run dev
 - [Open-Meteo Air Quality API](https://open-meteo.com/en/docs/air-quality-api) (CAMS) and [Forecast API](https://open-meteo.com/en/docs) (CC BY 4.0)
 - [NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/) VIIRS active fire detections (S-NPP, NOAA-20, NOAA-21)
 - URA Master Plan 2019 Planning Area Boundary (No Sea), via data.gov.sg
+- Reservoirs and water bodies © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL)
+- Neighbouring coastlines from [Natural Earth](https://www.naturalearthdata.com/) (public domain)

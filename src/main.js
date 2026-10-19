@@ -93,9 +93,14 @@ function togglePlay(force) {
 
 async function main() {
   renderLegend();
-  const geo = await fetch(`${import.meta.env.BASE_URL}data/planning-areas.json`).then((r) => r.json());
+  const [geo, context] = await Promise.all([
+    fetch(`${import.meta.env.BASE_URL}data/planning-areas.json`).then((r) => r.json()),
+    // Optional: water bodies and neighbouring coastlines; the map still works without them.
+    fetch(`${import.meta.env.BASE_URL}data/context.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  ]);
   const gutter = 16;
   scene = createScene($('map'), geo, {
+    context,
     // Screen space taken by the cards, so the camera frames the island in what's left.
     getInsets: () => {
       const wide = window.innerWidth > 900;

@@ -1,4 +1,5 @@
-import { REGIONS, PM25_BANDS, PSI_BANDS, bandFor, islandMax, isUpwind } from './data.js';
+import { REGIONS, PSI_BANDS, bandFor, islandMax, isUpwind } from './data.js';
+import { getScale, bandOf, displayValue } from './scales.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const $ = (id) => document.getElementById(id);
@@ -22,10 +23,14 @@ function el(tag, attrs = {}, parent) {
 }
 
 export function renderLegend() {
-  const ranges = ['0–55', '56–150', '151–250', '251+'];
-  $('legend').innerHTML = PM25_BANDS.map(
-    (b, i) => `<span><i style="background:${b.color}"></i>${b.label} <small>${ranges[i]}</small></span>`,
+  const scale = getScale();
+  $('legend').innerHTML = scale.bands.map(
+    (b) => `<span title="${b.label}"><i style="background:${b.color}"></i>${b.short ?? b.label} <small>${b.range}</small></span>`,
   ).join('');
+  $('hero-unit').textContent = scale.unit;
+  for (const btn of document.querySelectorAll('[data-scale]')) {
+    btn.setAttribute('aria-checked', String(btn.dataset.scale === scale.id));
+  }
 }
 
 /** Hero number, region bars, wind compass for the selected hour. */
@@ -41,17 +46,19 @@ export function renderPanel(data, index) {
 
   const max = islandMax(h.pm25);
   const top = REGIONS.reduce((a, r) => ((h.pm25[r] ?? -1) > (h.pm25[a] ?? -1) ? r : a), REGIONS[0]);
-  const band = bandFor(PM25_BANDS, max);
-  $('hero-value').textContent = Math.round(max);
+  const scale = getScale();
+  const band = bandOf(max);
+  $('hero-value').textContent = displayValue(max);
   $('hero-band').innerHTML = `<i style="background:${band.color}"></i>${band.label}`;
-  $('hero-note').textContent = `Highest 1-hr PM2.5 · ${top[0].toUpperCase()}${top.slice(1)}`;
+  $('hero-note').textContent = `${scale.metric} · ${top[0].toUpperCase()}${top.slice(1)}`;
 
-  const scale = Math.max(150, max);
+  const barMax = Math.max(scale.chartFloor, displayValue(max));
   $('regions').innerHTML = REGIONS.map((r) => {
     const v = h.pm25[r];
-    const b = v == null ? null : bandFor(PM25_BANDS, v);
-    const w = v == null ? 0 : Math.max(3, (v / scale) * 100);
-    return `<li><span>${r}</span><span class="bar"><span style="width:${w}%;background:${b?.color ?? '#ccc'}"></span></span><span class="num">${v == null ? '–' : Math.round(v)}</span></li>`;
+    const shown = displayValue(v);
+    const w = v == null ? 0 : Math.max(3, (shown / barMax) * 100);
+    const color = v == null ? '#ccc' : bandOf(v).color;
+    return `<li><span>${r}</span><span class="bar"><span style="width:${w}%;background:${color}"></span></span><span class="num">${shown ?? '–'}</span></li>`;
   }).join('');
 
   if (h.wind) {
@@ -93,8 +100,8 @@ export function renderPsi(data) {
 }
 
 /**
- * Single-series line: highest regional PM2.5 per hour. Observed is solid, forecast dashed.
- * Band thresholds (55/150/250) are the only y gridlines because they're what people act on.
+ * Single-series line: highest regional PM2.5 per hour on the current scale. Observed is
+ * solid, forecast dashed. Band thresholds are the only y gridlines because they're what people act on.
  */
 export function renderChart(data, index) {
   const svg = $('chart');
@@ -105,21 +112,23 @@ export function renderChart(data, index) {
 
   const pad = { l: 30, r: 10, t: 14, b: 18 };
   const tl = data.timeline;
-  const vals = tl.map((h) => islandMax(h.pm25));
-  const yMax = Math.max(160, Math.ceil(Math.max(...vals) * 1.15));
+  const scale = getScale();
+  const raw = tl.map((h) => islandMax(h.pm25)); // µg/m³
+  const vals = raw.map((v) => scale.convert(v)); // display units
+  const yMax = Math.max(scale.chartFloor, Math.ceil(Math.max(...vals) * 1.15));
   const x = (i) => pad.l + (i / Math.max(1, tl.length - 1)) * (width - pad.l - pad.r);
   const y = (v) => pad.t + (1 - v / yMax) * (height - pad.t - pad.b);
 
   // Recessive band tint + threshold gridlines
   let lo = 0;
-  for (const b of PM25_BANDS) {
+  for (const b of scale.bands) {
     const hi = Math.min(b.max, yMax);
     if (lo < yMax) {
       el('rect', { x: pad.l, width: width - pad.l - pad.r, y: y(hi), height: y(lo) - y(hi), fill: b.color, opacity: 0.08 }, svg);
     }
     lo = b.max;
   }
-  for (const v of [0, 55, 150, 250].filter((v) => v < yMax)) {
+  for (const v of scale.ticks.filter((v) => v < yMax)) {
     el('line', { x1: pad.l, x2: width - pad.r, y1: y(v), y2: y(v), class: 'grid' }, svg);
     el('text', { x: pad.l - 5, y: y(v) + 4, 'text-anchor': 'end', class: 'axis-label' }, svg).textContent = v;
   }
@@ -146,7 +155,7 @@ export function renderChart(data, index) {
 
   const v = vals[index];
   el('line', { x1: x(index), x2: x(index), y1: pad.t, y2: height - pad.b, class: 'sel-line' }, svg);
-  el('circle', { cx: x(index), cy: y(v), r: 6, fill: bandFor(PM25_BANDS, v).color, class: 'sel-dot' }, svg);
+  el('circle', { cx: x(index), cy: y(v), r: 6, fill: bandOf(raw[index]).color, class: 'sel-dot' }, svg);
   el('circle', { cx: x(index), cy: y(v), r: 7.5, fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.5 }, svg);
 
   return {
@@ -156,6 +165,6 @@ export function renderChart(data, index) {
       return Math.round(Math.min(1, Math.max(0, f)) * (tl.length - 1));
     },
     xOf: x,
-    value: (i) => vals[i],
+    pm25: (i) => raw[i],
   };
 }

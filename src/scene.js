@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { REGIONS, REGION_LOCATIONS, PM25_BANDS, bandFor, islandMean, isUpwind } from './data.js';
+import { REGIONS, REGION_LOCATIONS, islandMean, isUpwind } from './data.js';
+import { getScale, bandOf, displayValue } from './scales.js';
 
 // Local equirectangular projection centred on Singapore; 1 scene unit = 1 km.
 const LAT0 = 1.3521;
@@ -31,17 +32,19 @@ const COLORS = {
 };
 
 const WHITE = new THREE.Color('#ffffff');
-const BAND_COLORS = PM25_BANDS.map((b) => new THREE.Color(b.color));
+const bandColor = new THREE.Color();
 
-/** Cartoon fill for a PM2.5 value: band hue, lighter at the low end of each band. */
-export function pm25Color(v, out = new THREE.Color()) {
-  if (v == null) return out.copy(COLORS.noData);
-  const i = PM25_BANDS.findIndex((b) => v <= b.max);
-  const band = i === -1 ? PM25_BANDS.length - 1 : i;
-  const lo = band === 0 ? 0 : PM25_BANDS[band - 1].max;
-  const hi = Number.isFinite(PM25_BANDS[band].max) ? PM25_BANDS[band].max : lo + 150;
+/** Cartoon fill for a PM2.5 concentration on the current scale: band hue, lighter at the low end of each band. */
+export function pm25Color(pm25, out = new THREE.Color()) {
+  if (pm25 == null) return out.copy(COLORS.noData);
+  const { bands, convert } = getScale();
+  const v = convert(pm25);
+  const i = bands.findIndex((b) => v <= b.max);
+  const band = i === -1 ? bands.length - 1 : i;
+  const lo = band === 0 ? 0 : bands[band - 1].max;
+  const hi = Number.isFinite(bands[band].max) ? bands[band].max : lo + 150;
   const t = THREE.MathUtils.clamp((v - lo) / (hi - lo), 0, 1);
-  return out.copy(BAND_COLORS[band]).lerp(WHITE, 0.32 - 0.27 * t);
+  return out.copy(bandColor.set(bands[band].color)).lerp(WHITE, 0.32 - 0.27 * t);
 }
 
 function toonGradient() {
@@ -412,8 +415,8 @@ export function createScene(container, geo, { getInsets = () => ({ top: 0, right
     for (const r of REGIONS) {
       const v = pm25?.[r];
       const el = regionLabels[r];
-      el.querySelector('.val').textContent = v == null ? '–' : Math.round(v);
-      el.querySelector('.dot').style.background = v == null ? '#bbb' : bandFor(PM25_BANDS, v).color;
+      el.querySelector('.val').textContent = v == null ? '–' : displayValue(v);
+      el.querySelector('.dot').style.background = v == null ? '#bbb' : bandOf(v).color;
     }
     if (w) {
       // Meteorological direction = where wind comes FROM; particles move the opposite way.

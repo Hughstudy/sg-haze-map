@@ -84,6 +84,33 @@ h1, .hero-num, .kind, .btn, .region-badge {
 .status.error { border-color: var(--critical); }
 .status.error::before { background: var(--critical); }
 
+.scale-switch {
+  display: flex;
+  margin-top: 8px;
+  padding: 3px;
+  gap: 3px;
+  background: #f1e7d8;
+  border-radius: 12px;
+  width: fit-content;
+}
+.scale-switch button {
+  font: 600 13px 'Fredoka', 'Nunito', sans-serif;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 9px;
+  padding: 3px 10px;
+  min-height: 30px;
+  cursor: pointer;
+}
+.scale-switch button[aria-checked='true'] {
+  background: #fff;
+  color: var(--ink);
+  border-color: var(--ink);
+  box-shadow: 1.5px 1.5px 0 var(--ink);
+}
+.scale-switch button:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 2px; }
+
 /* Side panel */
 .panel {
   top: var(--gutter);
@@ -111,7 +138,8 @@ h1, .hero-num, .kind, .btn, .region-badge {
 
 .hero { display: flex; align-items: center; gap: 14px; margin: 10px 0 12px; }
 .hero-num { font-size: 52px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-.hero-num small { font-size: 13px; font-weight: 600; margin-left: 3px; color: var(--ink-2); }
+.hero-num { white-space: nowrap; }
+.hero-num small { font-size: 13px; font-weight: 600; margin-left: 3px; color: var(--ink-2); white-space: nowrap; }
 .hero-meta { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 
 .band-pill {

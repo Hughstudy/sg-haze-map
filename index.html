@@ -17,6 +17,10 @@
       <h1>Singapore Haze</h1>
       <p class="sub">Live PM2.5 · 4-day forecast</p>
       <div id="status" class="status" role="status">Loading live data…</div>
+      <div class="scale-switch" role="radiogroup" aria-label="Scale">
+        <button type="button" role="radio" data-scale="nea" aria-checked="true">NEA µg/m³</button>
+        <button type="button" role="radio" data-scale="us" aria-checked="false" title="US EPA AQI from the same NEA PM2.5 reading, as shown on aqicn.org">US AQI</button>
+      </div>
     </header>
 
     <aside class="card panel" id="panel" aria-live="polite">
@@ -25,7 +29,7 @@
         <span id="when-time" class="time">–</span>
       </div>
       <div class="hero">
-        <div class="hero-num"><span id="hero-value">–</span><small>µg/m³</small></div>
+        <div class="hero-num"><span id="hero-value">–</span><small id="hero-unit">µg/m³</small></div>
         <div class="hero-meta">
           <span id="hero-band" class="band-pill">–</span>
           <span id="hero-note" class="muted">Highest 1-hr PM2.5</span>
@@ -74,7 +78,7 @@
       <p class="credits">
         Data: <a href="https://data.gov.sg/datasets?topics=environment" target="_blank" rel="noopener">NEA via data.gov.sg</a> ·
         <a href="https://open-meteo.com/en/docs/air-quality-api" target="_blank" rel="noopener">Open-Meteo / CAMS</a> ·
-        boundaries: URA Master Plan 2019.
+        boundaries: URA Master Plan 2019. US AQI uses the EPA PM2.5 formula (as aqicn.org).
         <span class="disclaimer">Forecast is a ~40 km model nudged toward the latest reading — island-wide trend, not street-level.</span>
       </p>
     </section>

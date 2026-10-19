@@ -21,14 +21,6 @@ export const REGION_LOCATIONS = {
   central: { lat: 1.35735, lon: 103.82 },
 };
 
-// NEA 1-hour PM2.5 bands (µg/m³).
-export const PM25_BANDS = [
-  { max: 55, label: 'Normal', color: '#0ca30c' },
-  { max: 150, label: 'Elevated', color: '#fab219' },
-  { max: 250, label: 'High', color: '#ec835a' },
-  { max: Infinity, label: 'Very high', color: '#d03b3b' },
-];
-
 // NEA 24-hour PSI descriptors.
 export const PSI_BANDS = [
   { max: 50, label: 'Good' },

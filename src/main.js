@@ -1,6 +1,7 @@
 import './style.css';
 import { createScene } from './scene.js';
-import { loadHazeData, loadHotspots, PM25_BANDS, bandFor } from './data.js';
+import { loadHazeData, loadHotspots } from './data.js';
+import { setScale, bandOf, formatValue } from './scales.js';
 import { renderLegend, renderPanel, renderPsi, renderFires, renderChart, formatHour, formatClock } from './ui.js';
 
 const REFRESH_MS = 10 * 60 * 1000;
@@ -41,10 +42,10 @@ function select(i) {
 function showChartTip(i) {
   if (!chart || !data) return;
   const h = data.timeline[i];
-  const v = chart.value(i);
+  const v = chart.pm25(i);
   tip.hidden = false;
   tip.style.left = `${chart.xOf(i)}px`;
-  tip.textContent = `${formatHour(h.t)} · ${Math.round(v)} µg/m³ · ${bandFor(PM25_BANDS, v).label}${h.kind === 'forecast' ? ' (forecast)' : ''}`;
+  tip.textContent = `${formatHour(h.t)} · ${formatValue(v)} · ${bandOf(v).label}${h.kind === 'forecast' ? ' (forecast)' : ''}`;
 }
 
 async function refresh() {
@@ -113,7 +114,7 @@ async function main() {
     tooltip.hidden = false;
     tooltip.style.left = `${x}px`;
     tooltip.style.top = `${y}px`;
-    tooltip.innerHTML = `<b>${area.name}</b><br>${v == null ? 'No data' : `${Math.round(v)} µg/m³ · ${bandFor(PM25_BANDS, v).label}`}<br><span style="opacity:.75">NEA ${area.neaRegion} region</span>`;
+    tooltip.innerHTML = `<b>${area.name}</b><br>${v == null ? 'No data' : `${formatValue(v)} · ${bandOf(v).label}`}<br><span style="opacity:.75">NEA ${area.neaRegion} region</span>`;
   });
 
   // Scrub the timeline by pointer; the hidden range input handles keyboard
@@ -137,6 +138,15 @@ async function main() {
     showChartTip(index);
   });
   slider.addEventListener('blur', () => (tip.hidden = true));
+
+  // Same NEA reading, shown on NEA's µg/m³ bands or as US EPA AQI (like aqicn.org)
+  for (const btn of document.querySelectorAll('[data-scale]')) {
+    btn.addEventListener('click', () => {
+      setScale(btn.dataset.scale);
+      renderLegend();
+      if (data) select(index);
+    });
+  }
 
   $('play').addEventListener('click', () => togglePlay());
   $('now').addEventListener('click', () => {

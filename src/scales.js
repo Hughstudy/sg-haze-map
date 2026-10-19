@@ -60,15 +60,15 @@ export const SCALES = {
 };
 
 const STORAGE_KEY = 'sg-haze-scale';
-let current = SCALES.nea;
+let current = SCALES.us;
 
-// ?scale=us in the URL wins, then the viewer's last choice, then NEA.
+// ?scale=nea|us in the URL wins, then the viewer's last choice, then US AQI.
 try {
   const fromUrl = new URLSearchParams(location.search).get('scale');
   const saved = fromUrl || localStorage.getItem(STORAGE_KEY);
   if (SCALES[saved]) current = SCALES[saved];
 } catch {
-  // storage can be blocked (private mode, previews); NEA default is fine
+  // storage can be blocked (private mode, previews); the US AQI default is fine
 }
 
 export const getScale = () => current;

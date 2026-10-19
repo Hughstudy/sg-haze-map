@@ -10,7 +10,7 @@ A cartoon 3D map of Singapore showing live PM2.5 haze readings and a 4-day forec
 - **Wind:** the Open-Meteo 10 m wind drives the drifting haze particles and the compass.
 - **Fire hotspots (optional):** NASA FIRMS VIIRS detections from Sumatra to Borneo over the last 24 h, grouped into clusters and drawn as cartoon flames on the sea. A cluster is marked **upwind** when the wind at the selected hour blows from its direction toward Singapore. Each marker points in the true direction, but distances are log-compressed so 100–800 km fits just beyond the coast.
 - **Map:** the 55 URA planning areas as extruded toon tiles. Each area takes the colour of the NEA region whose label point is nearest its centroid. Real reservoirs and Marina Bay are cut in as water, the Johor and Batam coasts frame the view, and cartoon landmarks mark familiar places: Marina Bay Sands, the Singapore Flyer, Gardens by the Bay, the Changi runways and Jewel, the Jurong Island tanks and the Causeway.
-- **Scale switch:** NEA µg/m³ bands (default) or US EPA AQI, which matches aqicn.org (for example 73 µg/m³ → 160). Add `?scale=us` to link straight to the US view.
+- **Scale switch:** US EPA AQI (default), which matches aqicn.org (for example 73 µg/m³ → 160), or NEA's own µg/m³ bands. Add `?scale=nea` to link straight to the NEA view.
 
 The PM2.5 colour bands follow NEA's 1-hr bands: Normal 0–55, Elevated 56–150, High 151–250, Very high 251+.
 

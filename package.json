@@ -1,0 +1,19 @@
+{
+  "name": "sg-haze-map",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "geo": "node scripts/prepare-geo.mjs",
+    "hotspots": "node scripts/fetch-hotspots.mjs"
+  },
+  "devDependencies": {
+    "vite": "^8.3.4"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  }
+}

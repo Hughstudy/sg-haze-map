@@ -1,0 +1,317 @@
+:root {
+  --ink: #3a2e2a;
+  --ink-2: #6b5d57;
+  --card: #fffaf0;
+  --line: #e8dccb;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --accent: #2f8fd8;
+  --gutter: 16px;
+  --shadow: 4px 4px 0 var(--ink);
+  font-family: 'Nunito', system-ui, sans-serif;
+  color: var(--ink);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #9ad8ff;
+}
+
+#map {
+  position: fixed;
+  inset: 0;
+}
+
+#map canvas { display: block; touch-action: none; }
+
+.label-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+h1, .hero-num, .kind, .btn, .region-badge {
+  font-family: 'Fredoka', 'Nunito', system-ui, sans-serif;
+}
+
+.card {
+  position: fixed;
+  background: var(--card);
+  border: 2.5px solid var(--ink);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+.muted { color: var(--ink-2); font-weight: 500; }
+
+/* Header */
+.brand {
+  top: var(--gutter);
+  left: var(--gutter);
+  padding: 12px 16px;
+  max-width: calc(100vw - 2 * var(--gutter));
+}
+.brand h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.1; }
+.brand .sub { margin: 2px 0 8px; color: var(--ink-2); font-weight: 700; font-size: 14px; }
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1.5px solid var(--line);
+}
+.status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #bbb;
+}
+.status.live::before { background: var(--good); box-shadow: 0 0 0 3px rgba(12, 163, 12, 0.2); }
+.status.warn { border-color: var(--serious); }
+.status.warn::before { background: var(--serious); }
+.status.error { border-color: var(--critical); }
+.status.error::before { background: var(--critical); }
+
+/* Side panel */
+.panel {
+  top: var(--gutter);
+  right: var(--gutter);
+  width: 300px;
+  padding: 14px 16px;
+  max-height: calc(100vh - 210px);
+  overflow: auto;
+}
+
+.when { display: flex; align-items: baseline; gap: 8px; }
+.kind {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--card);
+}
+.kind.forecast { background: var(--accent); }
+.kind.observed { background: var(--ink-2); }
+.time { font-weight: 800; font-size: 15px; }
+
+.hero { display: flex; align-items: center; gap: 14px; margin: 10px 0 12px; }
+.hero-num { font-size: 52px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.hero-num small { font-size: 13px; font-weight: 600; margin-left: 3px; color: var(--ink-2); }
+.hero-meta { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+
+.band-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-weight: 800;
+  font-size: 14px;
+  padding: 2px 10px 2px 6px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink);
+  background: #fff;
+}
+.band-pill i, .legend i, .regions i, .region-badge .dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  flex: none;
+}
+
+.regions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.regions li {
+  display: grid;
+  grid-template-columns: 62px 1fr 34px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+.regions .bar { height: 10px; background: #f1e7d8; border-radius: 6px; overflow: hidden; }
+.regions .bar span { display: block; height: 100%; border-radius: 4px; transition: width 0.4s ease, background 0.4s ease; }
+.regions .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.wind { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1.5px dashed var(--line); }
+#compass { width: 54px; height: 54px; flex: none; }
+#compass .ring { fill: #fff; stroke: var(--ink); stroke-width: 2.5; }
+#compass .cardinal { font: 700 9px 'Fredoka', sans-serif; text-anchor: middle; dominant-baseline: middle; fill: var(--ink-2); }
+#compass .arrow { fill: var(--accent); stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
+#compass-arrow { transform-origin: 32px 32px; transition: transform 0.6s ease; }
+.wind .label { font-size: 12px; color: var(--ink-2); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.wind .value { font-weight: 800; font-size: 15px; }
+
+.fires { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1.5px dashed var(--line); }
+.fires[hidden] { display: none; }
+.fires-icon { width: 54px; height: 54px; flex: none; }
+.fires .label { font-size: 12px; color: var(--ink-2); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.fires .value { font-weight: 800; font-size: 15px; }
+.fires .note { font-size: 11.5px; color: var(--ink-2); font-weight: 600; line-height: 1.3; margin-top: 2px; }
+.fires .upwind-count { color: var(--critical); }
+
+.psi { margin-top: 12px; padding-top: 10px; border-top: 1.5px dashed var(--line); font-size: 13px; }
+.psi summary { cursor: pointer; font-weight: 800; }
+.psi-list { list-style: none; padding: 0; margin: 8px 0 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; text-align: center; }
+.psi-list li { background: #fff; border: 1.5px solid var(--line); border-radius: 10px; padding: 4px 2px; }
+.psi-list b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+.psi-list span { font-size: 10.5px; text-transform: capitalize; color: var(--ink-2); }
+.psi-desc { margin: 6px 0 0; color: var(--ink-2); }
+
+/* Timeline */
+.timeline {
+  left: var(--gutter);
+  right: var(--gutter);
+  bottom: var(--gutter);
+  padding: 10px 14px 6px;
+}
+.timeline-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.btn {
+  font-size: 15px;
+  font-weight: 600;
+  border: 2px solid var(--ink);
+  background: var(--warning);
+  color: var(--ink);
+  border-radius: 12px;
+  padding: 4px 12px;
+  min-width: 40px;
+  min-height: 34px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.btn:active { transform: translate(2px, 2px); box-shadow: none; }
+.btn.ghost { background: #fff; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; margin-left: auto; font-size: 12.5px; font-weight: 700; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend small { color: var(--ink-2); font-weight: 600; }
+
+.chart-wrap { position: relative; height: 96px; margin-top: 6px; }
+#chart { width: 100%; height: 100%; display: block; overflow: visible; }
+#chart .grid { stroke: var(--line); stroke-width: 1; }
+#chart .axis-label { font: 600 11px 'Nunito', sans-serif; fill: var(--ink-2); }
+#chart .band-label { font: 700 10px 'Nunito', sans-serif; fill: var(--ink-2); }
+#chart .line { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+#chart .line.forecast { stroke: var(--accent); stroke-dasharray: 5 4; }
+#chart .now-line { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 2 3; }
+#chart .now-label { font: 700 11px 'Fredoka', sans-serif; fill: var(--ink); }
+#chart .sel-line { stroke: var(--ink); stroke-width: 2; }
+#chart .sel-dot { stroke: var(--card); stroke-width: 2; }
+
+#slider {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.chart-wrap { cursor: ew-resize; touch-action: none; }
+.chart-wrap:focus-within { outline: 2.5px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+
+.chart-tip, .tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--ink);
+  color: var(--card);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 5px 9px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.chart-tip { bottom: calc(100% + 4px); transform: translateX(-50%); }
+.tooltip { position: fixed; z-index: 10; transform: translate(12px, -110%); }
+.tooltip b { font-family: 'Fredoka', sans-serif; font-size: 14px; }
+
+.credits { margin: 2px 0 0; font-size: 11px; color: var(--ink-2); line-height: 1.35; }
+.credits a { color: inherit; }
+
+/* Region badges floating over the map */
+.region-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 5px;
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 2px 2px 0 var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.region-badge .name { text-transform: capitalize; color: var(--ink-2); }
+.region-badge .val { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Fire cluster badges over the sea */
+.fire-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 2px 2px 0 var(--ink);
+  font: 600 12px 'Fredoka', 'Nunito', sans-serif;
+  white-space: nowrap;
+}
+.fire-badge b { color: #c2410c; font-weight: 700; }
+.fire-badge .upwind-tag {
+  display: none;
+  margin-left: 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--critical);
+  color: #fff;
+  font-size: 11px;
+}
+.fire-badge.upwind { border-color: var(--critical); }
+.fire-badge.upwind .upwind-tag { display: inline; }
+
+/* Small screens: panel becomes a compact strip above the timeline */
+@media (max-width: 900px) {
+  .brand { padding: 8px 12px; }
+  .brand h1 { font-size: 20px; }
+  .brand .sub { font-size: 12px; margin-bottom: 6px; }
+  .panel {
+    top: auto;
+    right: var(--gutter);
+    left: var(--gutter);
+    bottom: calc(var(--timeline-h, 200px) + var(--gutter) + 10px);
+    width: auto;
+    max-height: none;
+    padding: 10px 12px;
+  }
+  .hero { margin: 6px 0 8px; }
+  .hero-num { font-size: 36px; }
+  .regions { grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .regions li { grid-template-columns: 1fr; text-align: center; gap: 2px; font-size: 11.5px; }
+  .regions .num { text-align: center; font-size: 15px; }
+  .wind, .psi, .fires { display: none; }
+  .fire-badge { font-size: 10.5px; padding: 1px 6px; }
+  .fire-badge .fire-dist { display: none; }
+  .legend { margin-left: 0; gap: 8px; font-size: 11.5px; }
+  .legend small { display: none; }
+  .chart-wrap { height: 80px; }
+  .disclaimer { display: none; }
+  .region-badge { font-size: 11px; padding: 2px 7px 2px 4px; }
+  .region-badge .name { display: none; }
+}

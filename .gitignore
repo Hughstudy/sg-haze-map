@@ -1,0 +1,5 @@
+node_modules
+dist
+.DS_Store
+# Generated at deploy time from NASA FIRMS (needs FIRMS_MAP_KEY)
+public/data/hotspots.json

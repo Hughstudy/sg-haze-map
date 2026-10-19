@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Singapore Haze Map</title>
+    <meta name="description" content="A cartoon 3D map of Singapore showing live PM2.5 haze readings from NEA and a 4-day forecast." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23fab219' stroke='%233a2e2a' stroke-width='3'/><path d='M7 14h18M9 19h14' stroke='%233a2e2a' stroke-width='3' stroke-linecap='round'/></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="map" aria-label="3D map of Singapore coloured by PM2.5"></div>
+
+    <header class="card brand">
+      <h1>Singapore Haze</h1>
+      <p class="sub">Live PM2.5 · 4-day forecast</p>
+      <div id="status" class="status" role="status">Loading live data…</div>
+    </header>
+
+    <aside class="card panel" id="panel" aria-live="polite">
+      <div class="when">
+        <span id="when-kind" class="kind">Now</span>
+        <span id="when-time" class="time">–</span>
+      </div>
+      <div class="hero">
+        <div class="hero-num"><span id="hero-value">–</span><small>µg/m³</small></div>
+        <div class="hero-meta">
+          <span id="hero-band" class="band-pill">–</span>
+          <span id="hero-note" class="muted">Highest 1-hr PM2.5</span>
+        </div>
+      </div>
+      <ul id="regions" class="regions"></ul>
+      <div class="wind">
+        <svg id="compass" viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="28" class="ring" />
+          <text x="32" y="12" class="cardinal">N</text>
+          <g id="compass-arrow"><path d="M32 14 L40 38 L32 33 L24 38 Z" class="arrow" /></g>
+        </svg>
+        <div>
+          <div class="label">Wind</div>
+          <div id="wind-text" class="value">–</div>
+        </div>
+      </div>
+      <div class="fires" id="fires" hidden>
+        <svg viewBox="0 0 64 64" class="fires-icon" aria-hidden="true">
+          <path d="M32 6c4 10 14 16 14 30a14 14 0 0 1-28 0c0-8 4-12 6-16 1 6 4 8 6 8-2-8 0-16 2-22Z" fill="#ff7a2f" stroke="#3a2e2a" stroke-width="3" stroke-linejoin="round"/>
+          <path d="M32 30c3 5 7 8 7 14a7 7 0 0 1-14 0c0-5 4-8 7-14Z" fill="#ffd84a"/>
+        </svg>
+        <div>
+          <div class="label">Fire hotspots · 24 h</div>
+          <div id="fires-text" class="value">–</div>
+          <div id="fires-note" class="note"></div>
+        </div>
+      </div>
+      <details class="psi" open>
+        <summary>24-hr PSI <span id="psi-time" class="muted"></span></summary>
+        <ul id="psi" class="psi-list"></ul>
+      </details>
+    </aside>
+
+    <section class="card timeline" aria-label="Timeline">
+      <div class="timeline-top">
+        <button id="play" class="btn" aria-label="Play forecast">▶</button>
+        <button id="now" class="btn ghost">Now</button>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="chart-wrap" id="chart-wrap">
+        <svg id="chart" role="img" aria-label="Highest regional PM2.5 by hour: observed then forecast"></svg>
+        <input id="slider" type="range" min="0" max="0" value="0" step="1" aria-label="Choose hour" />
+        <div id="chart-tip" class="chart-tip" hidden></div>
+      </div>
+      <p class="credits">
+        Data: <a href="https://data.gov.sg/datasets?topics=environment" target="_blank" rel="noopener">NEA via data.gov.sg</a> ·
+        <a href="https://open-meteo.com/en/docs/air-quality-api" target="_blank" rel="noopener">Open-Meteo / CAMS</a> ·
+        boundaries: URA Master Plan 2019.
+        <span class="disclaimer">Forecast is a ~40 km model nudged toward the latest reading — island-wide trend, not street-level.</span>
+      </p>
+    </section>
+
+    <div id="tooltip" class="tooltip" hidden></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

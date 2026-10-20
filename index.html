@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="map" aria-label="3D map of Singapore coloured by PM2.5"></div>
+    <div id="map" aria-label="3D map of Singapore coloured by air quality"></div>
 
     <header class="card brand">
       <h1>Singapore Haze</h1>
@@ -20,6 +20,7 @@
       <div class="scale-switch" role="radiogroup" aria-label="Scale">
         <button type="button" role="radio" data-scale="nea" aria-checked="false" title="NEA's own 1-hr PM2.5 bands in µg/m³">NEA µg/m³</button>
         <button type="button" role="radio" data-scale="us" aria-checked="true" title="US EPA AQI from the same NEA PM2.5 reading, as shown on aqicn.org">US AQI</button>
+        <button type="button" role="radio" data-scale="psi" aria-checked="false" title="NEA's official 24-hr PSI; forecast hours are estimated from the PM2.5 forecast">PSI</button>
       </div>
     </header>
 
@@ -83,7 +84,7 @@
         <div class="legend" id="legend"></div>
       </div>
       <div class="chart-wrap" id="chart-wrap">
-        <svg id="chart" role="img" aria-label="Highest regional PM2.5 by hour: observed then forecast"></svg>
+        <svg id="chart" role="img" aria-label="Highest regional air quality by hour: observed then forecast"></svg>
         <input id="slider" type="range" min="0" max="0" value="0" step="1" aria-label="Choose hour" />
         <div id="chart-tip" class="chart-tip" hidden></div>
       </div>
@@ -92,7 +93,7 @@
         <a href="https://open-meteo.com/en/docs/air-quality-api" target="_blank" rel="noopener">Open-Meteo / CAMS</a> ·
         boundaries: URA Master Plan 2019 ·
         water © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> ·
-        coastlines: Natural Earth · rain: NEA gauges &amp; 2-hr forecast, Open-Meteo. US AQI uses the EPA PM2.5 formula (as aqicn.org).
+        coastlines: Natural Earth · rain: NEA gauges &amp; 2-hr forecast, Open-Meteo. US AQI uses the EPA PM2.5 formula (as aqicn.org). PSI is NEA's 24-hr index; forecast PSI is estimated from the PM2.5 forecast.
         <span class="disclaimer">Forecast is a ~40 km model nudged toward the latest reading — island-wide trend, not street-level.</span>
       </p>
     </section>

@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { REGIONS, REGION_LOCATIONS, islandMean, isUpwind } from './data.js';
-import { getScale, bandOf, displayValue } from './scales.js';
+import { getScale, bandOf, displayValue, valuesOf } from './scales.js';
 import { addWater, addNeighbors, addPlaceLabels, addLandmarks } from './landmarks.js';
 import { createRainLayer } from './rain.js';
+import { createWindLayer } from './wind.js';
 
 // Local equirectangular projection centred on Singapore; 1 scene unit = 1 km.
 const LAT0 = 1.3521;
@@ -12,6 +13,14 @@ const LON0 = 103.8198;
 const KX = 111.32 * Math.cos((LAT0 * Math.PI) / 180);
 const KY = 110.57;
 const project = (lon, lat) => [(lon - LON0) * KX, (lat - LAT0) * KY];
+
+// Map is true to scale out to this radius; fires farther away sit on log-compressed rings.
+const TO_SCALE_KM = 50;
+const FAR_K = 13;
+const DISTANCE_RINGS = [100, 250, 500, 1000];
+const RING_LABEL_BEARING = 165;
+const MAX_ZOOM_OUT = 340; // camera distance that shows every distance ring
+const FIRE_ZOOM_OUT = 1.35; // at most this much farther out than the island-only view, to show nearer fires // usually fire-free (Java Sea side) and nearest the camera
 
 const DEPTH = 0.5;
 const BEVEL = 0.12;
@@ -36,11 +45,11 @@ const COLORS = {
 const WHITE = new THREE.Color('#ffffff');
 const bandColor = new THREE.Color();
 
-/** Cartoon fill for a PM2.5 concentration on the current scale: band hue, lighter at the low end of each band. */
-export function pm25Color(pm25, out = new THREE.Color()) {
-  if (pm25 == null) return out.copy(COLORS.noData);
+/** Cartoon fill for a value on the current scale: band hue, lighter at the low end of each band. */
+export function levelColor(value, out = new THREE.Color()) {
+  if (value == null) return out.copy(COLORS.noData);
   const { bands, convert } = getScale();
-  const v = convert(pm25);
+  const v = convert(value);
   const i = bands.findIndex((b) => v <= b.max);
   const band = i === -1 ? bands.length - 1 : i;
   const lo = band === 0 ? 0 : bands[band - 1].max;
@@ -100,6 +109,30 @@ function nearestRegion(x, y) {
   return best;
 }
 
+/** Dashed distance rings on the sea, labelled in real km. */
+function addDistanceRings(scene, radiusOf) {
+  const solid = new THREE.LineBasicMaterial({ color: '#2b6f93', transparent: true, opacity: 0.45 });
+  const dashed = new THREE.LineDashedMaterial({ color: '#2b6f93', dashSize: 1.4, gapSize: 1.6, transparent: true, opacity: 0.4 });
+  const b = (RING_LABEL_BEARING * Math.PI) / 180;
+  for (const km of [TO_SCALE_KM, ...DISTANCE_RINGS]) {
+    const r = radiusOf(km);
+    const pts = Array.from({ length: 160 }, (_, i) => {
+      const a = (i / 160) * Math.PI * 2;
+      return new THREE.Vector3(Math.cos(a) * r, 0.03, Math.sin(a) * r);
+    });
+    const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), km === TO_SCALE_KM ? solid : dashed);
+    if (km !== TO_SCALE_KM) ring.computeLineDistances();
+    scene.add(ring);
+
+    const el = document.createElement('div');
+    el.className = `ring-label${km === TO_SCALE_KM ? ' to-scale' : ''}`;
+    el.textContent = km === TO_SCALE_KM ? `${km} km · to scale inside` : `${km.toLocaleString('en-SG')} km`;
+    const label = new CSS2DObject(el);
+    label.position.set(Math.sin(b) * r, 0.3, -Math.cos(b) * r);
+    scene.add(label);
+  }
+}
+
 // Deterministic RNG so trees and buildings don't reshuffle between reloads.
 function rng(seed) {
   return () => {
@@ -120,6 +153,10 @@ export function createScene(container, geo, { context = null, getInsets = () => 
   const labelRenderer = new CSS2DRenderer();
   labelRenderer.domElement.className = 'label-layer';
   container.appendChild(labelRenderer.domElement);
+  // Fire badges are placed by hand so they can pin to the screen edge when off-screen.
+  const fireLabelLayer = document.createElement('div');
+  fireLabelLayer.className = 'label-layer';
+  container.appendChild(fireLabelLayer);
 
   const scene = new THREE.Scene();
   scene.background = COLORS.sky.clone();
@@ -131,7 +168,7 @@ export function createScene(container, geo, { context = null, getInsets = () => 
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.minDistance = 12;
-  controls.maxDistance = 160;
+  controls.maxDistance = MAX_ZOOM_OUT;
   controls.maxPolarAngle = 1.3;
   controls.target.set(0, 0, 2);
 
@@ -223,7 +260,7 @@ export function createScene(container, geo, { context = null, getInsets = () => 
   const areaAt = (x, y) => areas.find((a) => pointInArea(x, y, a)) ?? null;
 
   // Real geography around and inside the island: Johor/Riau coasts, reservoirs, Marina Bay
-  addNeighbors({ scene, context, project, gradientMap });
+  addNeighbors({ scene, context, project, gradientMap, clipRadius: TO_SCALE_KM });
   const waterRings = addWater({ context, project, top: TOP, areas, areaAt, waterMat });
   const inWater = (x, y) => waterRings.some((r) => pointInRing(x, y, r));
   addPlaceLabels({ scene, project, top: TOP });
@@ -346,12 +383,16 @@ export function createScene(container, geo, { context = null, getInsets = () => 
   haze.frustumCulled = false;
   scene.add(haze);
 
+  // Wind arrows above the haze, so direction reads even when the air is clean.
+  const windLayer = createWindLayer({ scene, area: { a: 34, b: 22 }, height: TOP + 3.2 });
+
   // Fire hotspots: cartoon flames on the sea in their true direction from Singapore.
-  // Real distances (100–1000 km) are log-compressed onto a band hugging an ellipse
-  // around the island, so they stay in view instead of hundreds of units away.
-  const COAST = { a: 30, b: 17 };
-  const fireRadius = (ux, uz, km) =>
-    1 / Math.hypot(ux / COAST.a, uz / COAST.b) + 6 * Math.log(1 + Math.max(0, km - 60) / 80);
+  // Inside TO_SCALE_KM the map is true to scale (1 unit = 1 km), so a fire there sits where it
+  // really is. Beyond it, distance is log-compressed and drawn against labelled rings, so a fire
+  // 300 km away reads as far away instead of landing on Batam, and the view stays on Singapore.
+  const COAST = { a: 30, b: 17 }; // rough island outline, where smoke trails end
+  const fireRadius = (km) => (km <= TO_SCALE_KM ? km : TO_SCALE_KM + FAR_K * Math.log(km / TO_SCALE_KM));
+  addDistanceRings(scene, fireRadius);
   const fires = new THREE.Group();
   scene.add(fires);
   const flameOuterGeo = new THREE.ConeGeometry(0.55, 1.6, 7).translate(0, 0.8, 0);
@@ -360,15 +401,18 @@ export function createScene(container, geo, { context = null, getInsets = () => 
   const flameOuterMat = new THREE.MeshToonMaterial({ color: '#ff7a2f', emissive: '#6a1c00', gradientMap });
   const flameInnerMat = new THREE.MeshToonMaterial({ color: '#ffd84a', emissive: '#5c4000', gradientMap });
   const logsMat = new THREE.MeshToonMaterial({ color: '#6d4c41', gradientMap });
-  const smokeMat = new THREE.LineDashedMaterial({ color: '#8d6e63', dashSize: 1.2, gapSize: 0.9, transparent: true, opacity: 0.85 });
+  const smokeMat = new THREE.LineDashedMaterial({ color: '#8d6e63', dashSize: 1.6, gapSize: 1.1, transparent: true, opacity: 0.85 });
+  const smokeHeadGeo = new THREE.ConeGeometry(0.55, 1.4, 8);
+  const smokeHeadMat = new THREE.MeshToonMaterial({ color: '#8d6e63', gradientMap });
   let fireItems = [];
   let lastWind = null;
 
   function updateUpwind() {
     for (const f of fireItems) {
       f.upwind = isUpwind(f.sector, lastWind);
-      f.label.element.classList.toggle('upwind', f.upwind);
+      f.label.classList.toggle('upwind', f.upwind);
       f.smoke.visible = f.upwind;
+      f.box = null;
     }
   }
 
@@ -377,15 +421,18 @@ export function createScene(container, geo, { context = null, getInsets = () => 
 
   /** One flame per compass direction; size grows with the number of detections there. */
   function setHotspots(hotspots) {
-    for (const f of fireItems) fires.remove(f.group, f.label, f.smoke);
+    for (const f of fireItems) {
+      fires.remove(f.group, f.smoke);
+      f.label.remove();
+    }
     fireItems = (hotspots?.sectors ?? []).map((sector, i) => {
       const b = (sector.bearing * Math.PI) / 180;
       const ux = Math.sin(b);
       const uz = -Math.cos(b);
-      const r = fireRadius(ux, uz, sector.distanceKm);
+      const r = fireRadius(sector.distanceKm);
       const x = ux * r;
       const z = uz * r;
-      const size = THREE.MathUtils.clamp(0.8 + Math.sqrt(sector.count) / 14, 0.9, 3);
+      const size = THREE.MathUtils.clamp(1 + Math.sqrt(sector.count) / 12, 1.2, 3.4);
 
       const group = new THREE.Group();
       const outer = new THREE.Mesh(flameOuterGeo, flameOuterMat);
@@ -398,20 +445,23 @@ export function createScene(container, geo, { context = null, getInsets = () => 
 
       const el = document.createElement('div');
       el.className = 'fire-badge';
-      el.innerHTML = `<b>${sector.count.toLocaleString('en-SG')}</b><span class="fire-dist"> fires · ${sector.id} · ${kmText(sector)}</span><span class="upwind-tag">upwind</span><span class="rain-tag">rain</span>`;
-      const label = new CSS2DObject(el);
-      label.position.set(x, size * 1.7 + 0.8, z);
+      el.innerHTML = `<span class="edge-arrow">➜</span><b>${sector.count.toLocaleString('en-SG')}</b><span class="fire-dist"> fires · ${sector.id} · ${kmText(sector)}</span><span class="upwind-tag">upwind</span><span class="rain-tag">rain</span>`;
+      fireLabelLayer.appendChild(el);
+      const anchor = new THREE.Vector3(x, size * 1.7 + 0.8, z);
 
-      // Dashed smoke trail toward the coast, shown only when the wind carries it here.
-      const coast = (0.8 / Math.hypot(ux / COAST.a, uz / COAST.b)) / r;
-      const smoke = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, 1.2, z), new THREE.Vector3(x * coast, 2.2, z * coast)]),
-        smokeMat,
-      );
+      // Dashed smoke trail toward the coast with an arrowhead, shown only when the wind carries it here.
+      const coast = Math.min(1, (0.9 / Math.hypot(ux / COAST.a, uz / COAST.b)) / r);
+      const from = new THREE.Vector3(x, 1.2, z);
+      const to = new THREE.Vector3(x * coast, 2.2, z * coast);
+      const smoke = new THREE.Line(new THREE.BufferGeometry().setFromPoints([from, to]), smokeMat);
       smoke.computeLineDistances();
+      const head = new THREE.Mesh(smokeHeadGeo, smokeHeadMat);
+      head.position.copy(to);
+      head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
+      smoke.add(head);
 
-      fires.add(group, label, smoke);
-      return { sector, group, outer, inner, label, smoke, size, x, z, phase: i * 1.7, upwind: false };
+      fires.add(group, smoke);
+      return { sector, group, outer, inner, label: el, anchor, box: null, smoke, size, x, z, phase: i * 1.7, upwind: false };
     });
     updateUpwind();
     applyRain();
@@ -431,7 +481,8 @@ export function createScene(container, geo, { context = null, getInsets = () => 
     for (const f of fireItems) {
       const mm = fireRain[f.sector.id] ?? 0;
       const raining = mm >= 0.5;
-      f.label.element.classList.toggle('raining', raining);
+      f.label.classList.toggle('raining', raining);
+      f.box = null;
       // Cloud just beyond the flame (away from Singapore), low enough to stay clear of the labels above.
       if (raining) {
         const out = (Math.hypot(f.x, f.z) + f.size * 0.9 + 2.4) / Math.hypot(f.x, f.z);
@@ -453,18 +504,23 @@ export function createScene(container, geo, { context = null, getInsets = () => 
   const wind = { vx: 0, vz: 0, tx: 0, tz: 0 };
   let hazeLevel = 0;
 
-  function setValues(pm25, w) {
+  /** Colours and badges follow the current scale; haze particles always follow raw PM2.5. */
+  function setValues(hour) {
+    const pm25 = hour?.pm25;
+    const values = valuesOf(hour);
+    const w = hour?.wind;
     target = Object.fromEntries(REGIONS.map((r) => [r, pm25?.[r] ?? 0]));
     for (const a of areas) {
-      a.value = pm25?.[a.neaRegion] ?? null;
-      pm25Color(a.value, a.target);
+      a.value = values?.[a.neaRegion] ?? null;
+      levelColor(a.value, a.target);
     }
     for (const r of REGIONS) {
-      const v = pm25?.[r];
+      const v = values?.[r];
       const el = regionLabels[r];
       el.querySelector('.val').textContent = v == null ? '–' : displayValue(v);
       el.querySelector('.dot').style.background = v == null ? '#bbb' : bandOf(v).color;
     }
+    windLayer.set(w);
     if (w) {
       // Meteorological direction = where wind comes FROM; particles move the opposite way.
       const rad = (w.dir * Math.PI) / 180;
@@ -505,8 +561,9 @@ export function createScene(container, geo, { context = null, getInsets = () => 
     hoverCb(null);
   });
 
-  // Framing: centre the view in the part of the screen not covered by UI cards,
-  // then back the camera off until the island (and, on wide screens, the fire markers) fit.
+  // Framing: centre the view in the part of the screen not covered by UI cards, then back the
+  // camera off until the island fits. Fires are real-distance far away, so the view only eases
+  // out a little toward them; the rest pin to the screen edge (placeFireLabels).
   let framed = false;
   let userMoved = false;
   controls.addEventListener('start', () => (userMoved = true));
@@ -516,8 +573,9 @@ export function createScene(container, geo, { context = null, getInsets = () => 
   for (const x of [bbox.min.x, bbox.max.x]) for (const z of [bbox.min.z, bbox.max.z]) islandCorners.push(new THREE.Vector3(x, TOP, z));
   const ndc = new THREE.Vector3();
 
+  let insets = { top: 0, right: 0, bottom: 0, left: 0 };
   function applyInsets(w, h) {
-    const i = getInsets();
+    const i = (insets = getInsets());
     camera.setViewOffset(w, h, (i.right - i.left) / 2, (i.bottom - i.top) / 2, w, h);
     camera.updateProjectionMatrix();
     return i;
@@ -529,6 +587,7 @@ export function createScene(container, geo, { context = null, getInsets = () => 
     if (!w || !h) return; // hidden tab or collapsed pane; wait for a real size
     camera.aspect = w / h;
     applyInsets(w, h);
+    for (const f of fireItems) f.box = null; // badge fonts change with the layout
     renderer.setSize(w, h);
     labelRenderer.setSize(w, h);
     if (!framed) resetView();
@@ -540,32 +599,34 @@ export function createScene(container, geo, { context = null, getInsets = () => 
     if (!w || !h) return;
     const ins = applyInsets(w, h);
     const m = 0.04; // breathing room in NDC
-    // Labels are anchored at their centre, so leave extra room for their width sideways.
-    const withFires = w > 900 && fireItems.length > 0;
-    const mx = m + (withFires ? 170 / w : 0);
-    const xMin = -1 + (2 * ins.left) / w + mx;
-    const xMax = 1 - (2 * ins.right) / w - mx;
+    const xMin = -1 + (2 * ins.left) / w + m;
+    const xMax = 1 - (2 * ins.right) / w - m;
     const yMin = -1 + (2 * ins.bottom) / h + m;
     const yMax = 1 - (2 * ins.top) / h - m;
-    const pts = [...islandCorners];
-    if (withFires) {
-      for (const f of fireItems) pts.push(f.group.position, f.label.position);
-    }
     controls.target.set(0, 0, 2);
-    let dist = 30;
-    for (let k = 0; k < 40; k++) {
-      camera.position.copy(controls.target).addScaledVector(VIEW_DIR, dist);
-      camera.lookAt(controls.target);
-      camera.updateMatrixWorld();
-      const fits = pts.every((p) => {
-        ndc.copy(p).project(camera);
-        return ndc.x >= xMin && ndc.x <= xMax && ndc.y >= yMin && ndc.y <= yMax;
-      });
-      if (fits) break;
-      dist *= 1.07;
-    }
-    // Small portrait screens may need more room than the default zoom-out limit.
-    controls.maxDistance = Math.max(160, dist * 1.5);
+    const fitDistance = (pts, start) => {
+      let dist = start;
+      for (let k = 0; k < 60; k++) {
+        camera.position.copy(controls.target).addScaledVector(VIEW_DIR, dist);
+        camera.lookAt(controls.target);
+        camera.updateMatrixWorld();
+        const fits = pts.every((p) => {
+          ndc.copy(p).project(camera);
+          return ndc.x >= xMin && ndc.x <= xMax && ndc.y >= yMin && ndc.y <= yMax;
+        });
+        if (fits) break;
+        dist *= 1.05;
+      }
+      return dist;
+    };
+    const islandDist = fitDistance(islandCorners, 30);
+    // Phones keep the island-only view; there's no room to spare.
+    const fireDist = w > 900 && fireItems.length ? fitDistance(fireItems.map((f) => f.group.position), islandDist) : islandDist;
+    const dist = Math.min(fireDist, islandDist * FIRE_ZOOM_OUT);
+    camera.position.copy(controls.target).addScaledVector(VIEW_DIR, dist);
+    camera.lookAt(controls.target);
+    // Far enough to zoom out to the fire rings; small portrait screens start farther out.
+    controls.maxDistance = Math.max(MAX_ZOOM_OUT, dist * 1.5);
     controls.update();
     framed = true;
     userMoved = false;
@@ -573,6 +634,58 @@ export function createScene(container, geo, { context = null, getInsets = () => 
   new ResizeObserver(frame).observe(container);
   frame();
 
+  /**
+   * Fire badges sit above their flame when it's in view. Otherwise they pin to the edge of the
+   * uncovered map area on the line from Singapore toward the fire, with an arrow pointing out.
+   */
+  const EDGE_PAD = 10;
+  function placeFireLabels() {
+    if (!fireItems.length) return;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    const toScreen = (v) => {
+      ndc.copy(v).project(camera);
+      const x = ((ndc.x + 1) / 2) * w;
+      const y = ((1 - ndc.y) / 2) * h;
+      return ndc.z > 1 ? null : [x, y];
+    };
+    const [cx, cy] = toScreen(tmpVec.set(0, TOP, 0)) ?? [w / 2, h / 2];
+    for (const f of fireItems) {
+      const el = f.label;
+      f.box ??= [el.offsetWidth / 2, el.offsetHeight / 2];
+      const [hw, hh] = f.box;
+      const l = insets.left + EDGE_PAD + hw;
+      const r = w - insets.right - EDGE_PAD - hw;
+      const t = insets.top + EDGE_PAD + hh;
+      const b = h - insets.bottom - EDGE_PAD - hh;
+      const p = toScreen(f.anchor);
+      // Behind the camera: aim along the fire's ground direction instead.
+      let [x, y] = p ?? [cx + f.x * 100, cy + f.z * 100];
+      const inside = p && x >= l && x <= r && y >= t && y <= b;
+      if (!inside) {
+        const dx = x - cx;
+        const dy = y - cy;
+        let k = Infinity;
+        if (dx > 0) k = Math.min(k, (r - cx) / dx);
+        if (dx < 0) k = Math.min(k, (l - cx) / dx);
+        if (dy > 0) k = Math.min(k, (b - cy) / dy);
+        if (dy < 0) k = Math.min(k, (t - cy) / dy);
+        if (!Number.isFinite(k)) k = 0;
+        x = THREE.MathUtils.clamp(cx + dx * k, l, Math.max(l, r));
+        y = THREE.MathUtils.clamp(cy + dy * k, t, Math.max(t, b));
+        f.arrowAngle = Math.atan2(dy, dx);
+      }
+      if (inside !== f.inside) {
+        el.classList.toggle('offscreen', !inside);
+        f.inside = inside;
+        f.box = null;
+      }
+      if (!inside) el.style.setProperty('--edge-angle', `${f.arrowAngle}rad`);
+      el.style.transform = `translate(${(x - hw).toFixed(1)}px, ${(y - hh).toFixed(1)}px)`;
+    }
+  }
+
+  const tmpVec = new THREE.Vector3();
   const tmpColor = new THREE.Color();
   const hazeColor = new THREE.Color();
   // Plain clock: dt is clamped so a backgrounded tab doesn't jump on return.
@@ -635,6 +748,7 @@ export function createScene(container, geo, { context = null, getInsets = () => 
 
     updateLandmarks(time);
     rainLayer.update(dt, time);
+    windLayer.update(dt, time);
 
     for (const f of fireItems) {
       const flick = Math.sin(time * 7 + f.phase) * 0.5 + Math.sin(time * 11.3 + f.phase * 2) * 0.5;
@@ -646,6 +760,7 @@ export function createScene(container, geo, { context = null, getInsets = () => 
     controls.update();
     renderer.render(scene, camera);
     labelRenderer.render(scene, camera);
+    placeFireLabels();
   });
 
   return {

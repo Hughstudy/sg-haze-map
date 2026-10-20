@@ -314,6 +314,16 @@ h1, .hero-num, .kind, .btn, .region-badge {
   color: #5d6b4e;
 }
 
+/* Distance rings around the to-scale map */
+.ring-label {
+  font: 600 10.5px 'Fredoka', 'Nunito', sans-serif;
+  color: #2b6f93;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff;
+  opacity: 0.85;
+}
+.ring-label.to-scale { font-size: 10px; }
+
 /* Fire cluster badges over the sea */
 .fire-badge {
   display: inline-flex;
@@ -327,7 +337,16 @@ h1, .hero-num, .kind, .btn, .region-badge {
   font: 600 12px 'Fredoka', 'Nunito', sans-serif;
   white-space: nowrap;
 }
+.fire-badge { position: absolute; left: 0; top: 0; will-change: transform; }
 .fire-badge b { color: #c2410c; font-weight: 700; }
+.fire-badge .edge-arrow {
+  display: none;
+  color: #c2410c;
+  font-size: 11px;
+  transform: rotate(var(--edge-angle, 0rad));
+}
+.fire-badge.offscreen { opacity: 0.92; }
+.fire-badge.offscreen .edge-arrow { display: inline-block; }
 .fire-badge .upwind-tag {
   display: none;
   margin-left: 2px;

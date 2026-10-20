@@ -1,6 +1,8 @@
 // Live observations (NEA via data.gov.sg) + model forecast (Open-Meteo / CAMS).
 // Everything here is CORS-enabled and keyless, so it runs straight from GitHub Pages.
 
+import { psiFromPm25 } from './scales.js';
+
 const NEA = 'https://api-open.data.gov.sg/v2/real-time/api';
 const AQ = 'https://air-quality-api.open-meteo.com/v1/air-quality';
 const WX = 'https://api.open-meteo.com/v1/forecast';
@@ -21,17 +23,6 @@ export const REGION_LOCATIONS = {
   central: { lat: 1.35735, lon: 103.82 },
 };
 
-// NEA 24-hour PSI descriptors.
-export const PSI_BANDS = [
-  { max: 50, label: 'Good' },
-  { max: 100, label: 'Moderate' },
-  { max: 200, label: 'Unhealthy' },
-  { max: 300, label: 'Very unhealthy' },
-  { max: Infinity, label: 'Hazardous' },
-];
-
-export const bandFor = (bands, v) => bands.find((b) => v <= b.max) ?? bands.at(-1);
-
 async function getJson(url, timeoutMs = 15000) {
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`${new URL(url).host} responded ${res.status}`);
@@ -43,35 +34,34 @@ const sgDate = (unix) =>
 
 const pastDayCache = new Map();
 
-async function fetchNeaPm25Day(date, isToday) {
-  if (!isToday && pastDayCache.has(date)) return pastDayCache.get(date);
-  const body = await getJson(`${NEA}/pm25?date=${date}`);
-  if (body.code !== 0) throw new Error(`NEA PM2.5: ${body.errorMsg || 'error'}`);
-  const items = body.data.items.map((it) => ({
-    t: Date.parse(it.timestamp) / 1000,
-    pm25: it.readings.pm25_one_hourly,
-  }));
-  if (!isToday) pastDayCache.set(date, items);
+/** One day of an NEA hourly series, oldest first; past days never change, so they're cached. */
+async function fetchNeaDay(endpoint, date, isToday, pick) {
+  const key = `${endpoint}/${date}`;
+  if (!isToday && pastDayCache.has(key)) return pastDayCache.get(key);
+  const body = await getJson(`${NEA}/${endpoint}?date=${date}`);
+  if (body.code !== 0) throw new Error(`NEA ${endpoint}: ${body.errorMsg || 'error'}`);
+  const items = body.data.items.map((it) => ({ t: Date.parse(it.timestamp) / 1000, ...pick(it.readings) }));
+  if (!isToday) pastDayCache.set(key, items);
   return items;
 }
 
-async function fetchObservations() {
+/** Last 24 h of a series across today and yesterday (SG dates), oldest first. */
+async function fetchNeaLast24h(endpoint, pick) {
   const now = Date.now() / 1000;
-  const [today, yesterday, psi] = await Promise.all([
-    fetchNeaPm25Day(sgDate(now), true),
-    fetchNeaPm25Day(sgDate(now - 86400), false),
-    getJson(`${NEA}/psi`),
+  const [today, yesterday] = await Promise.all([
+    fetchNeaDay(endpoint, sgDate(now), true, pick),
+    fetchNeaDay(endpoint, sgDate(now - 86400), false, pick),
   ]);
-  if (psi.code !== 0) throw new Error(`NEA PSI: ${psi.errorMsg || 'error'}`);
-  const psiItem = psi.data.items[0];
-  const hours = [...today, ...yesterday]
-    .filter((h) => now - h.t <= 24 * HOUR)
-    .sort((a, b) => a.t - b.t);
-  return {
-    hours,
-    psi24: psiItem.readings.psi_twenty_four_hourly,
-    psiTime: Date.parse(psiItem.timestamp) / 1000,
-  };
+  return [...today, ...yesterday].filter((h) => now - h.t <= 24 * HOUR).sort((a, b) => a.t - b.t);
+}
+
+async function fetchObservations() {
+  const [hours, psi] = await Promise.all([
+    fetchNeaLast24h('pm25', (r) => ({ pm25: r.pm25_one_hourly })),
+    // PSI is optional: without it the PSI tab estimates every hour from PM2.5.
+    fetchNeaLast24h('psi', (r) => ({ psi: r.psi_twenty_four_hourly })).catch(() => []),
+  ]);
+  return { hours, psi: new Map(psi.map((h) => [h.t, h.psi])) };
 }
 
 async function fetchModel() {
@@ -122,6 +112,7 @@ export async function loadHazeData() {
       t: h.t,
       kind: 'observed',
       pm25: h.pm25,
+      psi: obs.psi.get(h.t) ?? null,
       wind: model ? nearestHour(model.wind, h.t) : null,
       rain: model ? nearestHour(model.rain, h.t) : null,
     });
@@ -148,14 +139,47 @@ export async function loadHazeData() {
     }
   }
 
+  addPsi(timeline, latest ? timeline.indexOf(latest) : -1);
+  const psiNow = [...timeline].reverse().find((h) => h.kind === 'observed' && h.psiObserved);
+
   return {
     timeline,
     nowIndex: latest ? timeline.indexOf(latest) : 0,
-    psi24: obs?.psi24 ?? null,
-    psiTime: obs?.psiTime ?? null,
+    psi24: psiNow?.psi ?? null,
+    psiTime: psiNow?.t ?? null,
     fetchedAt: Date.now(),
     errors,
   };
+}
+
+/**
+ * Fills h.psi for every hour. Observed hours keep NEA's published 24-hr PSI; the rest are
+ * estimated from the trailing 24-h mean PM2.5 (PM2.5 drives PSI in haze), nudged toward
+ * the last published value the same way the PM2.5 forecast is.
+ */
+function addPsi(timeline, nowIndex) {
+  const estimate = timeline.map((_, i) => {
+    const window = timeline.slice(Math.max(0, i - 23), i + 1);
+    return Object.fromEntries(REGIONS.map((r) => {
+      const vals = window.map((h) => h.pm25?.[r]).filter((v) => v != null);
+      return [r, vals.length ? psiFromPm25(vals.reduce((a, b) => a + b, 0) / vals.length) : null];
+    }));
+  });
+  const anchor = timeline[nowIndex]?.psi;
+  const bias = Object.fromEntries(REGIONS.map((r) => {
+    const o = anchor?.[r];
+    const e = estimate[nowIndex]?.[r];
+    return [r, o != null && e != null ? o - e : 0];
+  }));
+  timeline.forEach((h, i) => {
+    h.psiObserved = h.psi != null;
+    if (h.psiObserved) return;
+    const w = nowIndex >= 0 && i > nowIndex ? Math.exp(-(h.t - timeline[nowIndex].t) / HOUR / BLEND_HOURS) : 0;
+    h.psi = Object.fromEntries(REGIONS.map((r) => {
+      const e = estimate[i][r];
+      return [r, e == null ? null : Math.max(0, Math.round(e + bias[r] * w))];
+    }));
+  });
 }
 
 export const islandMax = (pm25) => Math.max(...REGIONS.map((r) => pm25?.[r] ?? 0));

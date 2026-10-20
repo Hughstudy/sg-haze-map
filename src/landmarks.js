@@ -54,12 +54,29 @@ export function addWater({ context, project, top, areas, areaAt, waterMat }) {
   return rings;
 }
 
-/** Southern Johor and the Riau Islands as low, muted land so Singapore sits in its real setting. */
-export function addNeighbors({ scene, context, project, gradientMap }) {
+/** Discards fragments farther than `radius` from the scene origin in x/z. */
+function clipToDisc(material, radius) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.clipRadius = { value: radius };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vClipXZ;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvClipXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vClipXZ;\nuniform float clipRadius;')
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (length(vClipXZ) > clipRadius) discard;');
+  };
+  return material;
+}
+
+/**
+ * Southern Johor and the Riau Islands as low, muted land so Singapore sits in its real setting.
+ * Cut off at `clipRadius` km: beyond it the map is no longer to scale (see the distance rings).
+ */
+export function addNeighbors({ scene, context, project, gradientMap, clipRadius = Infinity }) {
   const group = new THREE.Group();
-  const topMat = toonMat('#d9e4c8', gradientMap);
-  const sideMat = toonMat('#b9a27f', gradientMap);
-  const edgeMat = new THREE.LineBasicMaterial({ color: '#7d8a6e', transparent: true, opacity: 0.5 });
+  const topMat = clipToDisc(toonMat('#d9e4c8', gradientMap), clipRadius);
+  const sideMat = clipToDisc(toonMat('#b9a27f', gradientMap), clipRadius);
+  const edgeMat = clipToDisc(new THREE.LineBasicMaterial({ color: '#7d8a6e', transparent: true, opacity: 0.5 }), clipRadius);
   for (const n of context?.neighbors ?? []) {
     let geom;
     try {

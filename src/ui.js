@@ -1,5 +1,5 @@
-import { REGIONS, REGION_LOCATIONS, PSI_BANDS, bandFor, islandMax, isUpwind } from './data.js';
-import { getScale, bandOf, displayValue } from './scales.js';
+import { REGIONS, REGION_LOCATIONS, islandMax, isUpwind } from './data.js';
+import { SCALES, getScale, bandOf, displayValue, valuesOf } from './scales.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const $ = (id) => document.getElementById(id);
@@ -44,17 +44,19 @@ export function renderPanel(data, index) {
   kindEl.className = `kind ${kind.toLowerCase()}`;
   $('when-time').textContent = `${formatHour(h.t)}${rel ? ` · ${rel > 0 ? '+' : ''}${rel} h` : ''}`;
 
-  const max = islandMax(h.pm25);
-  const top = REGIONS.reduce((a, r) => ((h.pm25[r] ?? -1) > (h.pm25[a] ?? -1) ? r : a), REGIONS[0]);
+  const values = valuesOf(h) ?? {};
+  const max = islandMax(values);
+  const top = REGIONS.reduce((a, r) => ((values[r] ?? -1) > (values[a] ?? -1) ? r : a), REGIONS[0]);
   const scale = getScale();
   const band = bandOf(max);
   $('hero-value').textContent = displayValue(max);
   $('hero-band').innerHTML = `<i style="background:${band.color}"></i>${band.label}`;
-  $('hero-note').textContent = `${scale.metric} · ${top[0].toUpperCase()}${top.slice(1)}`;
+  const estimated = scale.key === 'psi' && !h.psiObserved ? ' (est.)' : '';
+  $('hero-note').textContent = `${scale.metric}${estimated} · ${top[0].toUpperCase()}${top.slice(1)}`;
 
   const barMax = Math.max(scale.chartFloor, displayValue(max));
   $('regions').innerHTML = REGIONS.map((r) => {
-    const v = h.pm25[r];
+    const v = values[r];
     const shown = displayValue(v);
     const w = v == null ? 0 : Math.max(3, (shown / barMax) * 100);
     const color = v == null ? '#ccc' : bandOf(v).color;
@@ -91,7 +93,7 @@ export function renderFires(hotspots, wind, fireMm = {}) {
   ];
   if (wet.length) lines.push(`<span class="rain-count">Rain over ${wet.map((s) => s.id).join(', ')} fires</span> in the next 3 h`);
   const latest = hotspots.latest ? ` · latest ${formatHour(hotspots.latest)}` : '';
-  lines.push(`NASA FIRMS VIIRS${latest} · map distance compressed`);
+  lines.push(`NASA FIRMS VIIRS${latest} · rings show real distance`);
   $('fires-note').innerHTML = lines.join('<br>');
 }
 
@@ -172,11 +174,12 @@ export function renderPsi(data) {
   }
   list.innerHTML = REGIONS.map((r) => `<li><b>${data.psi24[r] ?? '–'}</b><span>${r}</span></li>`).join('');
   const max = Math.max(...REGIONS.map((r) => data.psi24[r] ?? 0));
-  $('psi-time').textContent = `· ${formatHour(data.psiTime)} · ${bandFor(PSI_BANDS, max).label}`;
+  const band = SCALES.psi.bands.find((b) => max <= b.max);
+  $('psi-time').textContent = `· ${formatHour(data.psiTime)} · ${band.label}`;
 }
 
 /**
- * Single-series line: highest regional PM2.5 per hour on the current scale. Observed is
+ * Single-series line: highest regional value per hour on the current scale. Observed is
  * solid, forecast dashed. Band thresholds are the only y gridlines because they're what people act on.
  */
 export function renderChart(data, index) {
@@ -189,7 +192,7 @@ export function renderChart(data, index) {
   const pad = { l: 30, r: 10, t: 14, b: 32 };
   const tl = data.timeline;
   const scale = getScale();
-  const raw = tl.map((h) => islandMax(h.pm25)); // µg/m³
+  const raw = tl.map((h) => islandMax(valuesOf(h))); // the scale's field (µg/m³ or PSI)
   const vals = raw.map((v) => scale.convert(v)); // display units
   const yMax = Math.max(scale.chartFloor, Math.ceil(Math.max(...vals) * 1.15));
   const rainVals = tl.map((h) => {
@@ -258,7 +261,7 @@ export function renderChart(data, index) {
       return Math.round(Math.min(1, Math.max(0, f)) * (tl.length - 1));
     },
     xOf: x,
-    pm25: (i) => raw[i],
+    value: (i) => raw[i],
     rain: (i) => rainVals[i],
   };
 }

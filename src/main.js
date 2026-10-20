@@ -1,7 +1,7 @@
 import './style.css';
 import { createScene } from './scene.js';
 import { loadHazeData, loadHotspots, loadNeaRain, loadFireRain, rainWindow } from './data.js';
-import { setScale, bandOf, formatValue } from './scales.js';
+import { setScale, bandOf, formatValue, getScale } from './scales.js';
 import { renderLegend, renderPanel, renderPsi, renderFires, renderChart, rainSummary, renderRain, formatHour, formatClock } from './ui.js';
 
 const REFRESH_MS = 10 * 60 * 1000;
@@ -35,7 +35,7 @@ function select(i) {
   index = Math.max(0, Math.min(data.timeline.length - 1, i));
   slider.value = index;
   const h = data.timeline[index];
-  scene.setValues(h.pm25, h.wind);
+  scene.setValues(h);
   renderPanel(data, index);
   // Rain is context only: clouds and text, never an adjustment to the PM2.5 values.
   const rain = rainSummary(data, index, neaRain);
@@ -49,12 +49,13 @@ function select(i) {
 function showChartTip(i) {
   if (!chart || !data) return;
   const h = data.timeline[i];
-  const v = chart.pm25(i);
+  const v = chart.value(i);
   tip.hidden = false;
   tip.style.left = `${chart.xOf(i)}px`;
   const rain = chart.rain(i);
   const rainText = rain >= 0.1 ? ` · rain ${rain.toFixed(1)} mm` : '';
-  tip.textContent = `${formatHour(h.t)} · ${formatValue(v)} · ${bandOf(v).label}${h.kind === 'forecast' ? ' (forecast)' : ''}${rainText}`;
+  const est = getScale().key === 'psi' && !h.psiObserved && h.kind === 'observed' ? ' (est.)' : '';
+  tip.textContent = `${formatHour(h.t)} · ${formatValue(v)} · ${bandOf(v).label}${h.kind === 'forecast' ? ' (forecast)' : est}${rainText}`;
 }
 
 async function refresh() {
@@ -159,7 +160,7 @@ async function main() {
   });
   slider.addEventListener('blur', () => (tip.hidden = true));
 
-  // Same NEA reading, shown on NEA's µg/m³ bands or as US EPA AQI (like aqicn.org)
+  // NEA PM2.5 on NEA's µg/m³ bands or as US EPA AQI (like aqicn.org), or NEA's 24-hr PSI
   for (const btn of document.querySelectorAll('[data-scale]')) {
     btn.addEventListener('click', () => {
       setScale(btn.dataset.scale);

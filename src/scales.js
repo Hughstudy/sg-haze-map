@@ -48,7 +48,7 @@ export const SCALES = {
     name: 'NEA µg/m³',
     key: 'pm25',
     unit: 'µg/m³',
-    metric: 'Highest 1-hr PM2.5',
+    metric: '1-hr PM2.5',
     convert: (v) => v,
     // NEA 1-hour PM2.5 bands
     bands: [
@@ -65,7 +65,7 @@ export const SCALES = {
     name: 'US AQI',
     key: 'pm25',
     unit: 'US AQI',
-    metric: 'Highest PM2.5 AQI',
+    metric: 'PM2.5 AQI',
     convert: usAqi,
     // US EPA categories, in aqicn.org's colours
     bands: [
@@ -84,7 +84,7 @@ export const SCALES = {
     name: 'PSI',
     key: 'psi',
     unit: 'PSI',
-    metric: 'Highest 24-hr PSI',
+    metric: '24-hr PSI',
     convert: (v) => v,
     // NEA PSI descriptors
     bands: [

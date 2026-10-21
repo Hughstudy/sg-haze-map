@@ -163,7 +163,21 @@ h1, .hero-num, .kind, .btn, .region-badge {
   flex: none;
 }
 
+.hero-alt { font-size: 12px; font-weight: 600; color: var(--ink-2); opacity: 0.85; }
+.hero-alt[hidden] { display: none; }
+.pin {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 6px 0 1px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--accent);
+  border: 1.5px solid var(--ink);
+}
+
 .regions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.regions li.here { background: #e3f0fb; border-radius: 6px; box-shadow: 0 0 0 3px #e3f0fb; color: #1f6fb0; font-weight: 800; }
 .regions li {
   display: grid;
   grid-template-columns: 62px 1fr 34px;
@@ -297,6 +311,31 @@ h1, .hero-num, .kind, .btn, .region-badge {
 }
 .region-badge .name { text-transform: capitalize; color: var(--ink-2); }
 .region-badge .val { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.you-pin { padding-bottom: 7px; pointer-events: none; }
+.you-pin span {
+  position: relative;
+  display: block;
+  padding: 1px 9px;
+  background: var(--accent);
+  color: #fff;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 2px 2px 0 var(--ink);
+  font: 600 12px 'Fredoka', 'Nunito', sans-serif;
+}
+.you-pin span::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-right: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  transform: translateX(-50%) rotate(45deg);
+}
 
 /* Place names on the map */
 .place-label {

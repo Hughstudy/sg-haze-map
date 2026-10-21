@@ -19,6 +19,7 @@ let data = null;
 let hotspots = null;
 let neaRain = null; // { stations, forecast } from NEA
 let fireRain = null; // Map<sectorId, Map<t, mm>> from Open-Meteo
+let here = null; // { name, neaRegion } of the viewer's planning area, when GPS puts them in Singapore
 let index = 0;
 let chart = null;
 let scene = null;
@@ -36,7 +37,7 @@ function select(i) {
   slider.value = index;
   const h = data.timeline[index];
   scene.setValues(h);
-  renderPanel(data, index);
+  renderPanel(data, index, here);
   // Rain is context only: clouds and text, never an adjustment to the PM2.5 values.
   const rain = rainSummary(data, index, neaRain);
   const fireMm = Object.fromEntries((hotspots?.sectors ?? []).map((s) => [s.id, rainWindow(fireRain?.get(s.id), h.t, 3) ?? 0]));
@@ -91,6 +92,26 @@ async function refresh() {
     console.error(err);
     setStatus(data ? `Refresh failed · showing ${formatClock(data.fetchedAt)} data` : 'Could not reach data sources · retrying', 'error');
   }
+}
+
+/**
+ * The panel follows the viewer's region when the browser shares a position in Singapore, and
+ * the island high otherwise. The position stays on the device: it's only matched to an area here.
+ */
+function locate() {
+  navigator.geolocation?.getCurrentPosition(
+    ({ coords }) => {
+      here = scene.setUserLocation({ lon: coords.longitude, lat: coords.latitude });
+      if (data) select(index);
+    },
+    (err) => {
+      // A timeout keeps the last position; a refusal (or a revoked permission) drops it.
+      if (err.code !== err.PERMISSION_DENIED || !here) return;
+      here = scene.setUserLocation(null);
+      if (data) select(index);
+    },
+    { maximumAge: REFRESH_MS, timeout: 20000 },
+  );
 }
 
 function togglePlay(force) {
@@ -183,11 +204,17 @@ async function main() {
     document.documentElement.style.setProperty('--timeline-h', `${timelineCard.offsetHeight}px`);
   }).observe(timelineCard);
 
+  locate();
   await refresh();
   scene.refit(); // cards now have their real size
-  setInterval(refresh, REFRESH_MS);
+  setInterval(() => {
+    refresh();
+    locate();
+  }, REFRESH_MS);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && data && Date.now() - data.fetchedAt > REFRESH_MS) refresh();
+    if (document.hidden) return;
+    locate(); // the viewer may have moved while the tab was in the background
+    if (data && Date.now() - data.fetchedAt > REFRESH_MS) refresh();
   });
 }
 

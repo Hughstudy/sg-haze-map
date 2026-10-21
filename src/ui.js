@@ -33,8 +33,13 @@ export function renderLegend() {
   }
 }
 
-/** Hero number, region bars, wind compass for the selected hour. */
-export function renderPanel(data, index) {
+const cap = (s) => `${s[0].toUpperCase()}${s.slice(1)}`;
+
+/**
+ * Hero number, region bars, wind compass for the selected hour. The hero shows the viewer's
+ * NEA region when `here` (their planning area) is known, otherwise the island's highest region.
+ */
+export function renderPanel(data, index, here = null) {
   const h = data.timeline[index];
   if (!h) return;
   const rel = Math.round((h.t - data.timeline[data.nowIndex].t) / 3600);
@@ -47,12 +52,21 @@ export function renderPanel(data, index) {
   const values = valuesOf(h) ?? {};
   const max = islandMax(values);
   const top = REGIONS.reduce((a, r) => ((values[r] ?? -1) > (values[a] ?? -1) ? r : a), REGIONS[0]);
+  const mine = here && values[here.neaRegion] != null ? here.neaRegion : null;
   const scale = getScale();
-  const band = bandOf(max);
-  $('hero-value').textContent = displayValue(max);
+  const hero = mine ? values[mine] : max;
+  const band = bandOf(hero);
+  $('hero-value').textContent = displayValue(hero);
   $('hero-band').innerHTML = `<i style="background:${band.color}"></i>${band.label}`;
   const estimated = scale.key === 'psi' && !h.psiObserved ? ' (est.)' : '';
-  $('hero-note').textContent = `${scale.metric}${estimated} · ${top[0].toUpperCase()}${top.slice(1)}`;
+  const alt = $('hero-alt');
+  alt.hidden = !mine;
+  if (mine) {
+    $('hero-note').innerHTML = `<i class="pin"></i>${here.name} · ${cap(mine)}`;
+    alt.textContent = `${scale.metric}${estimated} · island\u00a0high\u00a0${displayValue(max)}`;
+  } else {
+    $('hero-note').textContent = `Highest ${scale.metric}${estimated} · ${cap(top)}`;
+  }
 
   const barMax = Math.max(scale.chartFloor, displayValue(max));
   $('regions').innerHTML = REGIONS.map((r) => {
@@ -60,7 +74,8 @@ export function renderPanel(data, index) {
     const shown = displayValue(v);
     const w = v == null ? 0 : Math.max(3, (shown / barMax) * 100);
     const color = v == null ? '#ccc' : bandOf(v).color;
-    return `<li><span>${r}</span><span class="bar"><span style="width:${w}%;background:${color}"></span></span><span class="num">${shown ?? '–'}</span></li>`;
+    const attrs = r === here?.neaRegion ? ' class="here" title="Your region"' : '';
+    return `<li${attrs}><span>${r}</span><span class="bar"><span style="width:${w}%;background:${color}"></span></span><span class="num">${shown ?? '–'}</span></li>`;
   }).join('');
 
   if (h.wind) {

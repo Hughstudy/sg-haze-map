@@ -96,6 +96,23 @@ function pointInArea(x, y, area) {
   return area.rings.some((rings) => pointInRing(x, y, rings[0]) && !rings.slice(1).some((h) => pointInRing(x, y, h)));
 }
 
+/** Distance from a point to a ring's edges, in scene units (km). */
+function distanceToRing(x, y, ring) {
+  let best = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    const dx = xj - xi;
+    const dy = yj - yi;
+    const t = Math.max(0, Math.min(1, ((x - xi) * dx + (y - yi) * dy) / (dx * dx + dy * dy || 1)));
+    best = Math.min(best, Math.hypot(x - (xi + t * dx), y - (yi + t * dy)));
+  }
+  return best;
+}
+
+// A GPS fix this close to the coast (beach, pier, ferry) still counts as the nearest area.
+const NEAR_COAST_KM = 1.5;
+
 const REGION_XY = Object.fromEntries(REGIONS.map((r) => [r, project(REGION_LOCATIONS[r].lon, REGION_LOCATIONS[r].lat)]));
 
 function nearestRegion(x, y) {
@@ -259,6 +276,18 @@ export function createScene(container, geo, { context = null, getInsets = () => 
   const bbox = new THREE.Box3().setFromObject(island);
   const areaAt = (x, y) => areas.find((a) => pointInArea(x, y, a)) ?? null;
 
+  function areaNear(x, y) {
+    let best = areaAt(x, y);
+    let bestD = NEAR_COAST_KM;
+    for (const a of best ? [] : areas) {
+      for (const poly of a.rings) {
+        const d = distanceToRing(x, y, poly[0]);
+        if (d < bestD) { bestD = d; best = a; }
+      }
+    }
+    return best;
+  }
+
   // Real geography around and inside the island: Johor/Riau coasts, reservoirs, Marina Bay
   addNeighbors({ scene, context, project, gradientMap, clipRadius: TO_SCALE_KM });
   const waterRings = addWater({ context, project, top: TOP, areas, areaAt, waterMat });
@@ -352,6 +381,25 @@ export function createScene(container, geo, { context = null, getInsets = () => 
     obj.position.set(x, TOP + 2.2, -y);
     scene.add(obj);
     regionLabels[r] = el;
+  }
+
+  // "You" pin at the viewer's GPS position; its tail points at the spot.
+  const youEl = document.createElement('div');
+  youEl.className = 'you-pin';
+  youEl.innerHTML = '<span>You</span>';
+  const you = new CSS2DObject(youEl);
+  you.center.set(0.5, 1);
+  you.renderOrder = 1; // above the region badges, which can sit within a couple of km of it
+  you.visible = false;
+  scene.add(you);
+
+  /** Pins a { lon, lat } position and returns its planning area, or null (and no pin) off the island. */
+  function setUserLocation(pos) {
+    const [x, y] = pos ? project(pos.lon, pos.lat) : [0, 0];
+    const area = pos ? areaNear(x, y) : null;
+    you.visible = !!area;
+    you.position.set(x, TOP, -y);
+    return area && { name: area.name, neaRegion: area.neaRegion };
   }
 
   // Haze particles drifting with the wind
@@ -767,6 +815,7 @@ export function createScene(container, geo, { context = null, getInsets = () => 
     setValues,
     setHotspots,
     setRain,
+    setUserLocation,
     resetView,
     /** Re-frame after the UI cards change size, unless the user has moved the camera. */
     refit: () => !userMoved && resetView(),
